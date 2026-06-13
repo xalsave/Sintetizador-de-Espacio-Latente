@@ -172,7 +172,7 @@ autónomo.
 
 ## Autor
 
-**Alejandro Saez Vega** — xalsave@…
+**Alejandro Saez Vega** || 
 Grado en Ingeniería de Sistemas de Telecomunicación
 Universitat Politècnica de València
 
