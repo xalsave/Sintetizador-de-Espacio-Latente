@@ -172,11 +172,11 @@ autónomo.
 
 ## Autor
 
-**Saúl Salvà** — saulsalva@…
+**Alejandro Saez Vega** — xalsave@…
 Grado en Ingeniería de Sistemas de Telecomunicación
 Universitat Politècnica de València
 
-Tutor del TFG: *por confirmar*
+Tutor del TFG: Jose Javier López Monfort
 
 ---
 
