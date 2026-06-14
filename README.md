@@ -126,6 +126,8 @@ Sintetizador-de-Espacio-Latente/
 │   ├── dataset/              # AKWF original + dataset procesado .npy
 │   ├── scripts/              # 1_…, 2_…, 3_… numerados por orden de ejecución
 │   └── exports/              # Modelos .tflite y headers .h para el firmware
+│       └── vae.pt            # Pesos del VAE (NO incluido en el repo: pesa
+│                              # mucho; se regenera con ml/scripts/3_train_vae.py)
 ├── firmware/                 # Código embebido
 │   ├── esp32_control/        # Firmware del ESP32-S3
 │   └── daisy_dsp/            # Firmware del Daisy Seed
