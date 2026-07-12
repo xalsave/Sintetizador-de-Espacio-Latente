@@ -11,3 +11,6 @@ ml/scripts/daisy_dump.txt
 
 # Pesos del VAE (ver DISENO.md #6: se regenera con ml/scripts/3_train_vae.py)
 ml/exports/vae.pt
+
+# Credenciales locales (nunca deben ir versionadas)
+creds.txt
