@@ -1,12 +1,20 @@
 // SintetizadorEspacioLatente.cpp
 // -----------------------------------------------------------------------------
-// Sesion 7 (MVP end-to-end): el Daisy recibe wavetables por SPI y las reproduce.
+// Sesion 8 (MIDI): el Keystep MK2 controla la NOTA (pitch/gate) del Daisy por
+// MIDI DIN -> Shield 6N138 -> USART1 (D13 Tx / D14 Rx). El TIMBRE lo sigue
+// controlando el toque en la CYD via SPI (MVP de S7, sin tocar).
 //
-// Cambio respecto a S5: la fuente de tablas ya NO es el timer con ondas de
-// prueba (seno/sierra/cuadrada); ahora cada wavetable llega por SPI desde el
-// ESP32-S3 (una por cada toque tactil, ya interpolada en el S3). El MOTOR de
-// wavetables con doble buffer + crossfade de 20 ms (clase Wavetable) es EL MISMO
-// de S5, sin tocar: solo cambia quien llama a LoadNext().
+// Dos fuentes de control independientes que conviven sin pisarse:
+//   - MIDI  -> osc.SetFreq()   (frecuencia de reproduccion, una voz monofonica)
+//   - CYD/SPI -> osc.LoadNext() (contenido de la wavetable, crossfade de S5)
+//
+// Voz monofonica con prioridad "ultima nota" y pila de notas pulsadas: al soltar
+// una tecla se vuelve a la anterior que siga pulsada. Envolvente ADSR completa
+// (daisysp::Adsr): Note On dispara el ataque, Note Off el release.
+//
+// NO se ha tocado nada del receptor SPI (S7, DMA + CRC, validado a 0 LSB) ni del
+// motor Wavetable con doble buffer + crossfade de 20 ms (S5). Solo se anade la
+// lectura MIDI en paralelo y la envolvente en el callback de audio.
 //
 // Enlace SPI (docs/spi.md seccion 2): S3 maestro, Daisy esclavo SPI_1 con
 // DMA, 10 MHz, modo 0, MSB first. Trama de 2054 bytes:
@@ -17,8 +25,9 @@
 // -----------------------------------------------------------------------------
 
 #include "daisy_seed.h"
-#include <cmath>
-#include <cstring>   // memcpy
+#include "daisysp.h"   // daisysp::Adsr (DaisySP ya compilada y enlazada, -ldaisysp)
+#include <cmath>       // powf
+#include <cstring>     // memcpy
 
 using namespace daisy;
 
@@ -26,29 +35,42 @@ DaisySeed hw;
 
 // Poner a 1 para volcar por USB serie las 1024 muestras de cada tabla recibida
 // (WAVE_BEGIN..WAVE_END), para la validacion cruzada con 7_validate_spi.py.
-// Poner a 0 para el uso normal del instrumento (solo suena).
-#define SPI_DEBUG_DUMP 1
+// En S8 se deja a 0: el uso normal es tocar MIDI mientras se mueve el timbre, y
+// el volcado de 1024 lineas por trama ahogaria los logs MIDI del serie.
+#define SPI_DEBUG_DUMP 0
+
+// Volcado por serie de la tabla nota->Hz->phase_inc al arrancar (y cada 3 s),
+// para 8_validate_midi.py. Poner a 0 para el uso normal del instrumento.
+#define MIDI_SELFTEST 1
+
+// Log por serie de cada Note On / Note Off en vivo (nota, Hz, phase_inc, notas
+// pulsadas). Util para ver con el Keystep que la conversion es correcta.
+#define MIDI_DEBUG 1
 
 // --------------------------------------------------------------------------- //
 // Configuracion
 // --------------------------------------------------------------------------- //
 static const int   TABLE_LEN   = 1024;     // muestras por ciclo (igual que el grid)
-static const float SAMPLE_RATE = 48000.f;  // Hz, codec del Daisy
-static const float NOTE_HZ     = 220.f;    // tono de prueba (La3). Grave-ish para
-                                           // oir bien el cambio de timbre.
-static const float XFADE_MS    = 20.f;     // duracion del crossfade. PROBAR 5/10/20.
-static const float OUT_GAIN    = 0.4f;     // ganancia de salida (sin envolvente aun)
+static const float SAMPLE_RATE = 48000.f;  // Hz, codec del Daisy (nominal)
+static const float NOTE_HZ     = 220.f;    // tono por defecto antes del primer MIDI
+static const float XFADE_MS    = 20.f;     // duracion del crossfade (S5)
+static const float OUT_GAIN    = 0.4f;     // ganancia de salida global
+
+// Envolvente ADSR (segundos / nivel 0..1). Valores de partida; se afinaran de oido.
+static const float ADSR_ATTACK  = 0.005f;  // 5 ms
+static const float ADSR_DECAY   = 0.10f;   // 100 ms
+static const float ADSR_SUSTAIN = 0.70f;   // 70 %
+static const float ADSR_RELEASE = 0.20f;   // 200 ms
+
+// Pila de notas pulsadas para la prioridad "ultima nota".
+static const int MAX_HELD = 16;
 
 
 // --------------------------------------------------------------------------- //
 // Motor wavetable: doble buffer + acumulador de fase + crossfade
 // --------------------------------------------------------------------------- //
-// (IDENTICO a la sesion 5: cerrado y validado por el oido. No se toca. La unica
-//  diferencia en S7 es que LoadNext() se llama al recibir una tabla por SPI en
-//  vez de con un timer de prueba.)
-// Las tablas se guardan en Q15 (int16), igual que el grid exportado por
-// 4_bake_grid.py (decision 13). Asi este motor consume exactamente el formato
-// que recibira por SPI sin conversiones extra.
+// (IDENTICO a la sesion 5/7: cerrado y validado. No se toca. En S8 sigue igual:
+//  MIDI solo llama a SetFreq(); LoadNext() lo sigue llamando el SPI.)
 class Wavetable
 {
   public:
@@ -58,10 +80,7 @@ class Wavetable
         phase_       = 0.f;
         phase_inc_   = 0.f;
         xfade_pos_   = 1.f;   // 1.0 = solo tabla activa (sin crossfade en curso)
-        // Incremento del crossfade por muestra: recorre 0 -> 1 en XFADE_MS.
         xfade_inc_   = 1.f / (sample_rate_ * (XFADE_MS / 1000.f));
-        // Arranca con silencio en ambos buffers por si NextSample corre antes
-        // de cargar nada.
         std::memset(table_active_, 0, sizeof(table_active_));
         std::memset(table_next_,   0, sizeof(table_next_));
     }
@@ -69,29 +88,20 @@ class Wavetable
     // Frecuencia de reproduccion (Hz). phase_inc_ en "muestras de tabla / muestra".
     void SetFreq(float hz) { phase_inc_ = hz * TABLE_LEN / sample_rate_; }
 
-    // Carga la primera tabla SIN crossfade (para el arranque).
     void SetActiveNow(const int16_t* src)
     {
         std::memcpy(table_active_, src, sizeof(table_active_));
-        xfade_pos_ = 1.f;  // nada que mezclar
+        xfade_pos_ = 1.f;
     }
 
-    // Pide cambiar de tabla: copia la nueva al buffer "next" y arranca el
-    // crossfade. Se llama SIEMPRE desde fuera del callback (loop principal o,
-    // mas adelante, al recibir una tabla por SPI). El orden importa: primero se
-    // copia entera la tabla y SOLO al final se pone xfade_pos_ = 0, que es la
-    // unica condicion que hace que el callback empiece a leer table_next_.
-    // Asi no se lee un buffer a medio escribir.
     void LoadNext(const int16_t* src)
     {
         std::memcpy(table_next_, src, sizeof(table_next_));
         xfade_pos_ = 0.f;  // dispara el crossfade (poner esto el ULTIMO)
     }
 
-    // Genera la siguiente muestra. Real-time safe: solo aritmetica y lecturas.
     float NextSample()
     {
-        // --- Interpolacion lineal entre muestras (suaviza el aliasing de pitch)
         uint32_t idx0 = (uint32_t)phase_;
         uint32_t idx1 = (idx0 + 1) & (TABLE_LEN - 1);
         float    frac = phase_ - (float)idx0;
@@ -102,16 +112,13 @@ class Wavetable
         float out;
         if(xfade_pos_ < 1.f)
         {
-            // Crossfade en curso: misma fase en ambas tablas, se mezclan.
             float s_next = (table_next_[idx0] * (1.f - frac)
                           + table_next_[idx1] * frac) / 32768.f;
             out = s_active * (1.f - xfade_pos_) + s_next * xfade_pos_;
 
-            // Avanzar el crossfade
             xfade_pos_ += xfade_inc_;
             if(xfade_pos_ >= 1.f)
             {
-                // Crossfade terminado: la tabla "next" pasa a ser la activa.
                 std::memcpy(table_active_, table_next_, sizeof(table_active_));
                 xfade_pos_ = 1.f;
             }
@@ -121,7 +128,6 @@ class Wavetable
             out = s_active;
         }
 
-        // --- Avance del acumulador de fase
         phase_ += phase_inc_;
         if(phase_ >= (float)TABLE_LEN) phase_ -= (float)TABLE_LEN;
 
@@ -134,7 +140,7 @@ class Wavetable
     int16_t table_next_[TABLE_LEN];
     float   phase_;
     float   phase_inc_;
-    float   xfade_pos_;   // 1.0 = solo activa; durante el crossfade va 0 -> 1
+    float   xfade_pos_;
     float   xfade_inc_;
 };
 
@@ -142,7 +148,158 @@ Wavetable osc;
 
 
 // --------------------------------------------------------------------------- //
-// Recepcion SPI (S7): esclavo SPI_1 + DMA
+// MIDI (S8): USART1 -> voz monofonica last-note + ADSR
+// --------------------------------------------------------------------------- //
+MidiUartHandler midi;
+daisysp::Adsr   env;
+
+// Estado compartido loop <-> callback de audio. La escritura es de una sola
+// palabra (bool / float dentro de SetFreq) y el callback solo lee: una carrera
+// deja el cambio como mucho un bloque tarde (~1 ms), inaudible. El reataque del
+// ADSR se aplaza a un flag para que TODA mutacion de env ocurra en el hilo de
+// audio (Retrigger no es re-entrante con Process).
+static volatile bool midi_gate          = false;  // true mientras haya tecla pulsada
+static volatile bool midi_retrigger_req = false;  // pedir reataque del ADSR
+
+// Pila de notas pulsadas (indice 0 = mas antigua, held_count-1 = cima = sonando).
+static uint8_t held_notes[MAX_HELD];
+static int     held_count = 0;
+
+// Conversion nota MIDI -> Hz. Identica a daisysp::mtof (2^((m-69)/12)*440).
+// UNICA fuente de verdad: la usan tanto el runtime como el volcado de MIDI_SELFTEST,
+// asi que la tabla que valida 8_validate_midi.py es exactamente la del sonido real.
+static inline float note_to_hz(int note)
+{
+    return 440.0f * powf(2.0f, ((float)note - 69.0f) / 12.0f);
+}
+
+// Quita una nota de la pila (si esta), compactando el hueco.
+static void stack_remove(uint8_t note)
+{
+    for(int i = 0; i < held_count; ++i)
+    {
+        if(held_notes[i] == note)
+        {
+            for(int j = i; j < held_count - 1; ++j)
+                held_notes[j] = held_notes[j + 1];
+            held_count--;
+            return;
+        }
+    }
+}
+
+static void handle_note_off(uint8_t note);
+
+static void handle_note_on(uint8_t note, uint8_t vel)
+{
+    if(vel == 0)  // Note On con velocity 0 = Note Off (running status)
+    {
+        handle_note_off(note);
+        return;
+    }
+
+    stack_remove(note);                          // evita duplicados en la pila
+    if(held_count < MAX_HELD)
+        held_notes[held_count++] = note;         // nueva cima
+
+    float hz = note_to_hz(note);
+    osc.SetFreq(hz);
+    midi_gate          = true;
+    midi_retrigger_req = true;                    // reataque en CADA Note On nuevo
+
+#if MIDI_DEBUG
+    float pinc = hz * TABLE_LEN / SAMPLE_RATE;
+    hw.PrintLine("# NOTE_ON  note=%d vel=%d hz_milli=%d pinc_micro=%d held=%d",
+                 (int)note, (int)vel, (int)(hz * 1000.f + 0.5f),
+                 (int)(pinc * 1e6f + 0.5f), held_count);
+#endif
+}
+
+static void handle_note_off(uint8_t note)
+{
+    stack_remove(note);
+
+    if(held_count > 0)
+    {
+        // Queda alguna tecla pulsada: volver a la mas reciente (cima). Cambio de
+        // pitch SIN reatacar: la envolvente sigue en sustain (legato natural).
+        uint8_t top = held_notes[held_count - 1];
+        osc.SetFreq(note_to_hz(top));
+        midi_gate = true;
+    }
+    else
+    {
+        // Ninguna tecla: soltar el gate -> el ADSR entra en release.
+        midi_gate = false;
+    }
+
+#if MIDI_DEBUG
+    hw.PrintLine("# NOTE_OFF note=%d held=%d gate=%d",
+                 (int)note, held_count, (int)midi_gate);
+#endif
+}
+
+// Vacia la cola de eventos MIDI. Omni: no se filtra por canal (responde a todos).
+static void midi_process()
+{
+    midi.Listen();
+    while(midi.HasEvents())
+    {
+        MidiEvent m = midi.PopEvent();
+        switch(m.type)
+        {
+            case NoteOn:
+            {
+                NoteOnEvent e = m.AsNoteOn();
+                handle_note_on(e.note, e.velocity);
+            }
+            break;
+            case NoteOff:
+            {
+                NoteOffEvent e = m.AsNoteOff();
+                handle_note_off(e.note);
+            }
+            break;
+            default: break;  // CC, pitch bend, etc.: fuera del alcance del MVP
+        }
+    }
+}
+
+static void midi_init()
+{
+    MidiUartHandler::Config c;
+    // El Config por defecto ya usa USART_1 con rx=D14/tx=D13; se fijan explicito
+    // por claridad y para que quede documentado en el propio codigo.
+    c.transport_config.periph = UartHandler::Config::Peripheral::USART_1;
+    c.transport_config.rx     = {DSY_GPIOB, 7};  // D14 (5V-tolerante -> 6N138 directo)
+    c.transport_config.tx     = {DSY_GPIOB, 6};  // D13
+    midi.Init(c);
+    midi.StartReceive();
+}
+
+#if MIDI_SELFTEST
+// Vuelca la tabla nota->Hz->phase_inc para las 128 notas MIDI, con la MISMA
+// note_to_hz() y la MISMA sample rate que usa el runtime, para validar contra
+// mtof en 8_validate_midi.py. Valores como enteros (el logger del Daisy no lleva
+// %f fiable): hz en milihercios, phase_inc en micro-unidades.
+static void dump_note_table(float sr)
+{
+    hw.PrintLine("NOTE_TABLE_BEGIN sr_milli=%d len=%d",
+                 (int)(sr * 1000.f + 0.5f), TABLE_LEN);
+    for(int n = 0; n < 128; ++n)
+    {
+        float hz   = note_to_hz(n);
+        float pinc = hz * TABLE_LEN / sr;
+        hw.PrintLine("%d %d %d",
+                     n, (int)(hz * 1000.f + 0.5f), (int)(pinc * 1e6f + 0.5f));
+    }
+    hw.PrintLine("NOTE_TABLE_END");
+}
+#endif
+
+
+// --------------------------------------------------------------------------- //
+// Recepcion SPI (S7): esclavo SPI_1 + DMA  --  NO SE TOCA en S8
 // --------------------------------------------------------------------------- //
 static const int SPI_SAMPLES   = 1024;
 static const int SPI_PAYLOAD   = SPI_SAMPLES * 2;   // 2048 bytes
@@ -150,19 +307,14 @@ static const int SPI_FRAME_LEN = SPI_PAYLOAD + 6;   // 2054 bytes (header+seq+cr
 
 SpiHandle spi;
 
-// El buffer de recepcion DMA debe vivir en RAM accesible por el DMA (SRAM1).
 static uint8_t DMA_BUFFER_MEM_SECTION spi_rx_buffer[SPI_FRAME_LEN];
-// Payload ya desempaquetado a int16, listo para LoadNext().
 static int16_t spi_wave[SPI_SAMPLES];
 
-static volatile bool     spi_dma_done = false;  // lo pone la ISR de fin de DMA
-static volatile uint32_t spi_frames   = 0;      // tramas validas totales (debug)
+static volatile bool     spi_dma_done = false;
+static volatile uint32_t spi_frames   = 0;
 
-// Prototipo (la ISR re-arma la recepcion en caso de error).
 void OnSpiComplete(void* context, SpiHandle::Result result);
 
-// CRC-16/CCITT-FALSE (poly 0x1021, init 0xFFFF). Identico al del S3
-// (spi_sender.cpp) y a 7_validate_spi.py, para poder comparar el CRC bit a bit.
 static uint16_t crc16_ccitt(const uint8_t* data, int len)
 {
     uint16_t crc = 0xFFFF;
@@ -175,17 +327,12 @@ static uint16_t crc16_ccitt(const uint8_t* data, int len)
     return crc;
 }
 
-// Callback de fin de DMA (se ejecuta en interrupcion). Se mantiene minimo: solo
-// señaliza que hay una trama en spi_rx_buffer. La validacion (header+CRC) y la
-// copia de 2 KB se hacen en el loop principal, y solo despues se re-arma el DMA;
-// asi no se sobrescribe el buffer antes de leerlo ni se recarga la ISR.
 void OnSpiComplete(void* context, SpiHandle::Result result)
 {
     (void)context;
     if(result == SpiHandle::Result::OK)
         spi_dma_done = true;
     else
-        // Error de DMA: re-armar sin perturbar el audio.
         spi.DmaReceive(spi_rx_buffer, SPI_FRAME_LEN, nullptr, OnSpiComplete, nullptr);
 }
 
@@ -205,12 +352,10 @@ static void spi_slave_init()
     c.pin_config.nss  = {DSY_GPIOG, 10};  // D7
     spi.Init(c);
 
-    // Primera recepcion armada; a partir de aqui el ciclo lo mantiene el loop.
     spi.DmaReceive(spi_rx_buffer, SPI_FRAME_LEN, nullptr, OnSpiComplete, nullptr);
 }
 
 #if SPI_DEBUG_DUMP
-// Volcado compatible con el parser de 6_validate_s3.py / 7_validate_spi.py.
 static void dump_wave(const int16_t* w)
 {
     hw.PrintLine("WAVE_BEGIN");
@@ -220,9 +365,6 @@ static void dump_wave(const int16_t* w)
 }
 #endif
 
-// Procesa una trama recibida (llamado desde el loop principal, fuera de la ISR).
-// Valida header + CRC; si es correcta, desempaqueta el payload y dispara el
-// crossfade con LoadNext(). Luego re-arma la recepcion DMA.
 static void spi_process_frame()
 {
     bool     ok  = (spi_rx_buffer[0] == 0xDE && spi_rx_buffer[1] == 0xAD);
@@ -236,22 +378,18 @@ static void spi_process_frame()
         ok = (crc_rx == crc_calc);
         if(ok)
         {
-            // Payload int16 LE -> int16 nativo (STM32 tambien es LE: copia directa).
             std::memcpy(spi_wave, spi_rx_buffer + 4, SPI_PAYLOAD);
             osc.LoadNext(spi_wave);   // mismo crossfade de S5
             spi_frames++;
         }
     }
 
-    // Re-armar la recepcion ANTES de imprimir (el volcado es lento y no debe
-    // frenar la siguiente trama mas de lo imprescindible).
     spi_dma_done = false;
     spi.DmaReceive(spi_rx_buffer, SPI_FRAME_LEN, nullptr, OnSpiComplete, nullptr);
 
     if(ok)
     {
-        hw.SetLed(true);   // parpadeo: trama valida aplicada
-        // Resumen barato (una linea) para casar seq con el lado del S3.
+        hw.SetLed(true);
         int16_t vmin = 32767, vmax = -32768;
         for(int n = 0; n < SPI_SAMPLES; ++n) {
             if(spi_wave[n] < vmin) vmin = spi_wave[n];
@@ -261,7 +399,7 @@ static void spi_process_frame()
                      seq, (unsigned)spi_frames, (int)vmin, (int)vmax,
                      (int)spi_wave[0], (int)spi_wave[512]);
 #if SPI_DEBUG_DUMP
-        dump_wave(spi_wave);   // 1024 lineas: solo durante validacion (1 coord fija)
+        dump_wave(spi_wave);
 #endif
     }
     else
@@ -278,9 +416,18 @@ void AudioCallback(AudioHandle::InterleavingInputBuffer  in,
                    AudioHandle::InterleavingOutputBuffer out,
                    size_t size)
 {
+    // Reataque del ADSR pedido desde el loop (Note On): se aplica aqui, en el
+    // hilo de audio, para que Retrigger no colisione con Process.
+    if(midi_retrigger_req)
+    {
+        env.Retrigger(false);   // soft: sin click
+        midi_retrigger_req = false;
+    }
+
     for(size_t i = 0; i < size; i += 2)
     {
-        float s = osc.NextSample() * OUT_GAIN;
+        float amp = env.Process(midi_gate);        // envolvente MIDI (gate)
+        float s   = osc.NextSample() * amp * OUT_GAIN;
         out[i]     = s;  // L
         out[i + 1] = s;  // R
     }
@@ -296,22 +443,44 @@ int main(void)
     hw.StartLog(false);   // USB serie para depurar (no espera al PC)
 
     osc.Init(hw.AudioSampleRate());
-    osc.SetFreq(NOTE_HZ);
-    // Sin tabla inicial: ambos buffers a silencio (Init los pone a 0). El primer
-    // frame SPI hara un fundido de entrada de 20 ms desde el silencio.
+    osc.SetFreq(NOTE_HZ);   // pitch por defecto; gate=false -> en silencio hasta el 1er MIDI
 
+    env.Init(hw.AudioSampleRate());
+    env.SetAttackTime(ADSR_ATTACK);
+    env.SetDecayTime(ADSR_DECAY);
+    env.SetSustainLevel(ADSR_SUSTAIN);
+    env.SetReleaseTime(ADSR_RELEASE);
+
+    midi_init();
     spi_slave_init();
     hw.StartAudio(AudioCallback);
 
+#if MIDI_SELFTEST
+    dump_note_table(hw.AudioSampleRate());
+    uint32_t last_dump = System::GetNow();
+#endif
     uint32_t last_blink = System::GetNow();
 
     while(true)
     {
-        // Una trama SPI lista -> validar y (si procede) cargar con crossfade.
+        // MIDI: pitch/gate de la voz monofonica.
+        midi_process();
+
+        // SPI: una trama lista -> validar y (si procede) crossfade de timbre.
         if(spi_dma_done)
             spi_process_frame();
 
-        // Apagar el LED 100 ms despues del ultimo parpadeo de trama valida.
+#if MIDI_SELFTEST
+        // Re-volcar la tabla cada 3 s para que la captura de serie siempre pille
+        // un bloque completo, sin depender de cuando se abra el terminal.
+        if(System::GetNow() - last_dump >= 3000)
+        {
+            dump_note_table(hw.AudioSampleRate());
+            last_dump = System::GetNow();
+        }
+#endif
+
+        // Apagar el LED 100 ms despues del ultimo parpadeo de trama SPI valida.
         if(System::GetNow() - last_blink >= 100)
         {
             hw.SetLed(false);
