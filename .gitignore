@@ -1,0 +1,13 @@
+# Python
+__pycache__/
+*.pyc
+
+# Logs de monitor serie (PlatformIO monitor_filters = log2file)
+firmware/*/logs/
+
+# Volcados puntuales de depuracion/validacion (no son artefactos del proyecto)
+ml/scripts/captura.txt
+ml/scripts/daisy_dump.txt
+
+# Pesos del VAE (ver DISENO.md #6: se regenera con ml/scripts/3_train_vae.py)
+ml/exports/vae.pt
