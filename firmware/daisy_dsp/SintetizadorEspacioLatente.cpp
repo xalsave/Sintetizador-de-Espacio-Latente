@@ -1,5 +1,34 @@
 // SintetizadorEspacioLatente.cpp
 // -----------------------------------------------------------------------------
+// BLOQUE B (20 ago 2026): panel de control analogico sobre lo ya validado.
+//
+//   - 6 potenciometros por ADC: A, D, S, R del envolvente (sustituyen a las
+//     constantes fijas de S8) + cutoff y resonancia de un filtro daisysp::Svf.
+//   - Selector ON-OFF-ON de tipo de filtro (LPF / BPF / HPF) leido por ADC.
+//   - OLED SSD1306 por I2C (pines fisicos 12 y 13) mostrando los seis valores.
+//
+// La cadena de audio pasa de  osc -> ADSR  a  osc -> Svf -> ADSR  (orden clasico
+// de sintesis sustractiva: VCO -> VCF -> VCA).
+//
+// Los pines NO se han elegido aqui: vienen fijados por docs/veroboard.md
+// seccion 2, que es la especificacion de la placa definitiva. Este firmware se
+// construye CONTRA ese pinout, no al reves.
+//
+// Correspondencia pin fisico del Daisy -> argumento de hw.GetPin() (numeracion
+// "D" de libDaisy). NO coinciden, y confundirlos es cablear otro pin:
+//
+//   fisico 22 (PC0)  A0 = D15   Attack       fisico 26 (PA6)  A4 = D19   Cutoff
+//   fisico 23 (PA3)  A1 = D16   Decay        fisico 27 (PC1)  A5 = D20   Q
+//   fisico 24 (PB1)  A2 = D17   Sustain      fisico 28 (PC4)  A6 = D21   Selector
+//   fisico 25 (PA7)  A3 = D18   Release      fisico 21        3V3A (alimenta potes)
+//   fisico 12 (PB8)  SCL = D11  OLED         fisico 13 (PB9)  SDA = D12  OLED
+//
+// (En la columna derecha del conector, fisico = D + 7. Verificado contra la
+//  tabla seedgpio[] de libDaisy/src/daisy_seed.cpp.)
+//
+// NO se ha tocado: el receptor SPI (S7), el motor Wavetable con crossfade (S5),
+// la voz monofonica MIDI ni la pila de notas (S8).
+// -----------------------------------------------------------------------------
 // Sesion 8 (MIDI): el Keystep MK2 controla la NOTA (pitch/gate) del Daisy por
 // MIDI DIN -> Shield 6N138 -> USART1 (D13 Tx / D14 Rx). El TIMBRE lo sigue
 // controlando el toque en la CYD via SPI (MVP de S7, sin tocar).
@@ -25,9 +54,10 @@
 // -----------------------------------------------------------------------------
 
 #include "daisy_seed.h"
-#include "daisysp.h"   // daisysp::Adsr (DaisySP ya compilada y enlazada, -ldaisysp)
-#include <cmath>       // powf
+#include "daisysp.h"   // daisysp::Adsr, daisysp::Svf (DaisySP enlazada, -ldaisysp)
+#include <cmath>       // powf, fabsf
 #include <cstring>     // memcpy
+#include <cstdio>      // sprintf (solo para las lineas del OLED)
 
 using namespace daisy;
 
@@ -53,6 +83,43 @@ DaisySeed hw;
 // hasta donde llego el arranque; el latido distingue "vivo esperando" de "muerto".
 #define HEARTBEAT 1
 
+// --- Interruptores del bloque B ------------------------------------------- //
+// Estan separados A PROPOSITO: permiten encender el panel por partes durante la
+// puesta en marcha. Un pin de ADC sin cablear FLOTA y lee basura, asi que hasta
+// que un control no este fisicamente conectado su bloque debe quedarse a 0 o el
+// sintetizador parecera roto sin estarlo.
+
+// 0 -> ADSR con las constantes fijas de S8 (comportamiento identico al del 15 ago)
+#define POTS_ENABLED     1
+
+// 0 -> LPF fijo, sin leer el pin 28. Poner a 0 mientras el ON-OFF-ON y sus dos
+//      resistencias de 10k no esten montados.
+#define SELECTOR_ENABLED 1
+
+// 0 -> cadena de audio de S8 (osc -> ADSR), sin filtro. Util para A/B y para
+//      aislar si un ruido nuevo viene del filtro o de otra parte.
+#define FILTER_ENABLED   1
+
+// Compensacion de la ganancia de resonancia. El pico del Svf en la frecuencia de
+// corte llega a +20 dB con Q alto: sin esto, subir la resonancia satura la salida.
+// La formula es NEUTRA en Q=0 (factor 1.0), asi que no altera la calibracion de
+// nivel de S8 ni las medidas de THD, que se toman con la resonancia a cero.
+#define FILTER_MAKEUP    1
+
+// 0 hasta que el OLED este cableado. Se deja a 0 por defecto porque el driver
+// transmite por I2C en modo BLOQUEANTE: con el display ausente o mal cableado,
+// cada transferencia agota su timeout y el arranque se vuelve lentisimo.
+#define OLED_ENABLED     0
+
+// Direccion I2C del modulo. Casi todos los SSD1306 de 0.96" son 0x3C; algunos
+// clones vienen a 0x3D (suele ir serigrafiado o depender de un puente).
+#define OLED_ADDR        0x3C
+
+// Volcado por serie de los 7 canales de ADC cada 500 ms (valor crudo en milesimas
+// y valor ya mapeado). Es la herramienta para verificar el cableado del panel
+// ANTES de fiarse del sonido: girar un pote y ver que se mueve el canal correcto.
+#define POT_DEBUG        1
+
 // --------------------------------------------------------------------------- //
 // Configuracion
 // --------------------------------------------------------------------------- //
@@ -66,7 +133,9 @@ static const float XFADE_MS    = 20.f;     // duracion del crossfade (S5)
 // es una media ponderada y no anade ganancia, asi que el pico maximo es 0.8.
 static const float OUT_GAIN    = 0.8f;
 
-// Envolvente ADSR (segundos / nivel 0..1). Valores de partida; se afinaran de oido.
+// Envolvente ADSR (segundos / nivel 0..1). Desde el bloque B son solo los valores
+// de ARRANQUE: el ADSR queda gobernado por los cuatro potes en cuanto llega la
+// primera lectura del ADC. Con POTS_ENABLED a 0 vuelven a ser los definitivos.
 static const float ADSR_ATTACK  = 0.005f;  // 5 ms
 static const float ADSR_DECAY   = 0.10f;   // 100 ms
 static const float ADSR_SUSTAIN = 0.70f;   // 70 %
@@ -480,6 +549,292 @@ static void spi_process_frame()
 
 
 // --------------------------------------------------------------------------- //
+// Bloque B: panel analogico (6 potes + selector) y filtro Svf
+// --------------------------------------------------------------------------- //
+// Los siete canales van al ADC1 del STM32H750, con los potes alimentados desde
+// 3V3A (pin fisico 21) y NUNCA desde el rail de 5 V: el ADC referencia su fondo
+// de escala a esa misma tension analogica, asi que cualquier deriva afecta por
+// igual a referencia y senal y se cancela. Colgarlos del 3V3 digital meteria
+// ademas el ruido de conmutacion en la lectura. (veroboard.md seccion 2.)
+
+enum PotIdx
+{
+    POT_ATTACK = 0,
+    POT_DECAY,
+    POT_SUSTAIN,
+    POT_RELEASE,
+    POT_CUTOFF,
+    POT_RES,
+    POT_SELECT,
+    POT_COUNT
+};
+
+// Indice para hw.GetPin() de cada canal, EN EL MISMO ORDEN que PotIdx. Ver la
+// tabla de correspondencia con los pines fisicos en la cabecera del fichero.
+static const uint8_t POT_PIN_D[POT_COUNT] = {15, 16, 17, 18, 19, 20, 21};
+
+// Rangos de mapeo. Tiempos y frecuencia van en escala EXPONENCIAL porque el oido
+// percibe las dos logaritmicamente: un pote lineal sobre un rango lineal dejaria
+// todo el recorrido util apelotonado en el primer cuarto de giro.
+static const float ATTACK_MIN  = 0.001f;   // 1 ms
+static const float ATTACK_MAX  = 2.0f;     // 2 s
+static const float DECAY_MIN   = 0.005f;   // 5 ms
+static const float DECAY_MAX   = 2.0f;     // 2 s
+static const float RELEASE_MIN = 0.005f;   // 5 ms
+static const float RELEASE_MAX = 4.0f;     // 4 s
+static const float CUTOFF_MIN  = 30.f;     // Hz
+static const float CUTOFF_MAX  = 12000.f;  // Hz. El Svf exige f < sr/3 (16 kHz):
+                                           // 12 kHz deja margen y ya esta fuera
+                                           // del rango util del oido para un LPF.
+static const float RES_MAX     = 0.90f;    // SetRes admite 0..1; 0.9 deja margen
+                                           // antes del limite de estabilidad.
+
+// Suavizado de los controles: un polo aplicado UNA VEZ POR BLOQUE de audio
+// (48 muestras a 48 kHz -> 1 kHz de tasa de control). El coeficiente 0.03
+// equivale a una constante de tiempo de ~30 ms.
+//
+// ESTO es lo que elimina el zipper noise: sin el, cada bloque saltaria de golpe
+// al valor nuevo del ADC y la escalera de escalones en la frecuencia de corte se
+// oye como un crujido al girar el pote. Con el, el salto por bloque es una
+// fraccion del error y el barrido suena continuo. Complementa (no sustituye) a
+// los 100 nF de cada cursor a AGND, que atacan el ruido captado por el cable.
+static const float CTRL_SMOOTH = 0.03f;
+
+enum FiltType
+{
+    FILT_LPF = 0,
+    FILT_BPF,
+    FILT_HPF
+};
+
+daisysp::Svf filt;
+
+// Valor suavizado 0..1 de cada canal. Lo escribe SOLO el hilo de audio; el bucle
+// principal lo lee para el OLED y el volcado por serie. Es una carrera benigna:
+// una lectura desactualizada un bloque (1 ms) no cambia nada de lo que se pinta.
+static float ctrl[POT_COUNT];
+
+static volatile int filt_type = FILT_LPF;
+
+// Mapeo exponencial de 0..1 al rango [lo, hi].
+static inline float map_exp(float x, float lo, float hi)
+{
+    return lo * powf(hi / lo, x);
+}
+
+// Decodifica el selector ON-OFF-ON leido en el pin fisico 28. Las tres tensiones
+// las fija el divisor de dos resistencias de 10k descrito en veroboard.md:
+//   arriba (a 3V3A) = 3,3 V -> LPF   centro (abierto) = 1,65 V -> BPF
+//   abajo  (a AGND) = 0 V   -> HPF
+// El centro NO es un pin al aire: si lo fuera, flotaria y leeria basura. Son esas
+// dos resistencias las que lo mantienen clavado a media escala.
+// No hace falta antirrebote aparte: se decide sobre el valor ya suavizado, y los
+// ~30 ms del filtro de control son exactamente eso.
+static inline int decode_filt(float v)
+{
+    if(v > 0.75f) return FILT_LPF;
+    if(v < 0.25f) return FILT_HPF;
+    return FILT_BPF;
+}
+
+// Lee el ADC, suaviza y traslada a los parametros. Se llama una vez por bloque
+// de audio, DESDE EL HILO DE AUDIO: asi toda mutacion de env y de filt ocurre en
+// el mismo hilo que los llama a Process, igual que ya se hacia con el reataque
+// del ADSR. GetFloat() solo lee el buffer que llena el DMA, no bloquea.
+static void controls_update()
+{
+    for(int i = 0; i < POT_COUNT; ++i)
+        ctrl[i] += (hw.adc.GetFloat(i) - ctrl[i]) * CTRL_SMOOTH;
+
+    // Filtro: se refresca siempre. Es el unico parametro que se barre en vivo y
+    // el que tiene que sonar continuo.
+    filt.SetFreq(map_exp(ctrl[POT_CUTOFF], CUTOFF_MIN, CUTOFF_MAX));
+    filt.SetRes(ctrl[POT_RES] * RES_MAX);
+
+#if SELECTOR_ENABLED
+    filt_type = decode_filt(ctrl[POT_SELECT]);
+#endif
+
+    // ADSR: solo se reescribe cuando el pote se ha movido de verdad. Los cuatro
+    // setters recalculan coeficientes con exponenciales, y llamarlos 4000 veces
+    // por segundo para reescribir el mismo valor es trabajo tirado.
+    static float last[4] = {-1.f, -1.f, -1.f, -1.f};
+    const float  EPS     = 0.002f;   // ~2 LSB de un pote de recorrido completo
+
+    if(fabsf(ctrl[POT_ATTACK] - last[0]) > EPS)
+    {
+        env.SetAttackTime(map_exp(ctrl[POT_ATTACK], ATTACK_MIN, ATTACK_MAX));
+        last[0] = ctrl[POT_ATTACK];
+    }
+    if(fabsf(ctrl[POT_DECAY] - last[1]) > EPS)
+    {
+        env.SetDecayTime(map_exp(ctrl[POT_DECAY], DECAY_MIN, DECAY_MAX));
+        last[1] = ctrl[POT_DECAY];
+    }
+    if(fabsf(ctrl[POT_SUSTAIN] - last[2]) > EPS)
+    {
+        env.SetSustainLevel(ctrl[POT_SUSTAIN]);   // nivel, no tiempo: lineal
+        last[2] = ctrl[POT_SUSTAIN];
+    }
+    if(fabsf(ctrl[POT_RELEASE] - last[3]) > EPS)
+    {
+        env.SetReleaseTime(map_exp(ctrl[POT_RELEASE], RELEASE_MIN, RELEASE_MAX));
+        last[3] = ctrl[POT_RELEASE];
+    }
+}
+
+static void controls_init()
+{
+    static AdcChannelConfig adc_cfg[POT_COUNT];
+    for(int i = 0; i < POT_COUNT; ++i)
+        adc_cfg[i].InitSingle(hw.GetPin(POT_PIN_D[i]));
+
+    hw.adc.Init(adc_cfg, POT_COUNT);
+    hw.adc.Start();
+
+    // Arrancar el suavizado ya en el valor real de cada pote. Si se dejara en 0,
+    // los primeros ~100 ms serian un barrido audible desde cutoff minimo hasta
+    // donde este el mando: un "wop" en cada encendido.
+    System::Delay(5);   // que el DMA complete al menos una conversion
+    for(int i = 0; i < POT_COUNT; ++i)
+        ctrl[i] = hw.adc.GetFloat(i);
+
+#if SELECTOR_ENABLED
+    filt_type = decode_filt(ctrl[POT_SELECT]);
+#endif
+}
+
+
+// --------------------------------------------------------------------------- //
+// OLED SSD1306 por I2C (pines fisicos 12 = SCL y 13 = SDA)
+// --------------------------------------------------------------------------- //
+// Va colgado del Daisy, no de la CYD, porque la cadena de datos es unidireccional
+// (CYD -> S3 -> Daisy) y los potes estan en el extremo final: pintarlos en la CYD
+// exigiria remontar los dos enlaces al reves, incluido el SPI de S7, que esta
+// congelado. Aqui es cero protocolo nuevo. (PROJECT.md seccion 9, bloque B.)
+//
+// TRAMPA EVITADA: I2C1 sale tanto por PB8/PB9 (pines 12-13) como por PB6/PB7
+// (pines 14-15), y PB6/PB7 son el USART1 del MIDI. Coger el mapeo "por defecto"
+// habria cableado el OLED encima del MIDI. Van obligatoriamente en 12 y 13.
+#if OLED_ENABLED
+#include "dev/oled_ssd130x.h"
+
+using MyOled = OledDisplay<SSD130xI2c128x64Driver>;
+MyOled display;
+
+// Cada Update() manda el framebuffer entero (1 kB) de forma BLOQUEANTE: ~10 ms a
+// 1 MHz. Por eso solo se refresca cuando algun valor mostrado ha cambiado de
+// verdad: tocando el teclado sin mover mandos, el bucle principal no se detiene
+// nunca. El periodo es el limite superior, no la cadencia real.
+static const uint32_t OLED_PERIOD_MS = 150;
+
+static void oled_init()
+{
+    MyOled::Config c;
+    auto&          i2c = c.driver_config.transport_config.i2c_config;
+    i2c.periph         = I2CHandle::Config::Peripheral::I2C_1;
+    // 1 MHz es el valor por defecto de libDaisy y va sobrado para 5 refrescos por
+    // segundo. Si en protoboard el display se corrompe (hilos largos, sin masa
+    // trenzada), bajar a I2C_400KHZ antes de sospechar de nada mas.
+    i2c.speed              = I2CHandle::Config::Speed::I2C_1MHZ;
+    i2c.mode               = I2CHandle::Config::Mode::I2C_MASTER;
+    i2c.pin_config.scl     = hw.GetPin(11);   // pin fisico 12 = PB8
+    i2c.pin_config.sda     = hw.GetPin(12);   // pin fisico 13 = PB9
+    c.driver_config.transport_config.i2c_address = OLED_ADDR;
+
+    display.Init(c);
+    display.Fill(false);
+    display.SetCursor(0, 0);
+    display.WriteString("ESPACIO", Font_11x18, true);
+    display.SetCursor(0, 20);
+    display.WriteString("LATENTE", Font_11x18, true);
+    display.SetCursor(0, 48);
+    display.WriteString("TFG - GITST UPV", Font_6x8, true);
+    display.Update();
+}
+#endif  // OLED_ENABLED
+
+
+// Valores ya mapeados a unidades humanas, para el OLED y el volcado por serie.
+// Se calculan en el bucle principal a partir de ctrl[]: enteros, porque el
+// printf del Daisy no lleva soporte de coma flotante fiable.
+struct ControlView
+{
+    int a_ms, d_ms, s_pct, r_ms, cut_hz, q_pct, type;
+};
+
+static ControlView controls_view()
+{
+    ControlView v;
+#if !POTS_ENABLED
+    // Sin potes, lo que gobierna son las constantes de S8: mostrar ctrl[] (que
+    // esta a cero) mentiria sobre lo que de verdad esta sonando.
+    v.a_ms   = (int)(ADSR_ATTACK * 1000.f);
+    v.d_ms   = (int)(ADSR_DECAY * 1000.f);
+    v.r_ms   = (int)(ADSR_RELEASE * 1000.f);
+    v.s_pct  = (int)(ADSR_SUSTAIN * 100.f + 0.5f);
+    v.cut_hz = (int)CUTOFF_MAX;
+    v.q_pct  = 0;
+    v.type   = filt_type;
+    return v;
+#else
+    v.a_ms   = (int)(map_exp(ctrl[POT_ATTACK],  ATTACK_MIN,  ATTACK_MAX)  * 1000.f);
+    v.d_ms   = (int)(map_exp(ctrl[POT_DECAY],   DECAY_MIN,   DECAY_MAX)   * 1000.f);
+    v.r_ms   = (int)(map_exp(ctrl[POT_RELEASE], RELEASE_MIN, RELEASE_MAX) * 1000.f);
+    v.s_pct  = (int)(ctrl[POT_SUSTAIN] * 100.f + 0.5f);
+    v.cut_hz = (int)map_exp(ctrl[POT_CUTOFF], CUTOFF_MIN, CUTOFF_MAX);
+    v.q_pct  = (int)(ctrl[POT_RES] * 100.f + 0.5f);
+    v.type   = filt_type;
+    return v;
+#endif
+}
+
+static const char* filt_name(int t)
+{
+    return (t == FILT_LPF) ? "LPF" : (t == FILT_BPF) ? "BPF" : "HPF";
+}
+
+#if OLED_ENABLED
+static void oled_draw()
+{
+    static ControlView prev  = {-1, -1, -1, -1, -1, -1, -1};
+    ControlView        v     = controls_view();
+
+    // Sin cambios visibles no se toca el bus: el Update() es lo caro.
+    if(v.a_ms == prev.a_ms && v.d_ms == prev.d_ms && v.s_pct == prev.s_pct
+       && v.r_ms == prev.r_ms && v.cut_hz == prev.cut_hz && v.q_pct == prev.q_pct
+       && v.type == prev.type)
+        return;
+    prev = v;
+
+    char line[24];
+    display.Fill(false);
+
+    display.SetCursor(0, 0);
+    sprintf(line, "FILTRO %s", filt_name(v.type));
+    display.WriteString(line, Font_7x10, true);
+
+    display.SetCursor(0, 14);
+    sprintf(line, "CUT %5d Hz", v.cut_hz);
+    display.WriteString(line, Font_6x8, true);
+
+    display.SetCursor(0, 24);
+    sprintf(line, "Q   %5d %%", v.q_pct);
+    display.WriteString(line, Font_6x8, true);
+
+    display.SetCursor(0, 38);
+    display.WriteString("ADSR", Font_7x10, true);
+
+    display.SetCursor(0, 52);
+    sprintf(line, "%4d %4d %3d%% %4d", v.a_ms, v.d_ms, v.s_pct, v.r_ms);
+    display.WriteString(line, Font_6x8, true);
+
+    display.Update();
+}
+#endif  // OLED_ENABLED
+
+
+// --------------------------------------------------------------------------- //
 // Callback de audio (regla critica: nada de malloc/printf/bloqueos)
 // --------------------------------------------------------------------------- //
 void AudioCallback(AudioHandle::InterleavingInputBuffer  in,
@@ -494,16 +849,51 @@ void AudioCallback(AudioHandle::InterleavingInputBuffer  in,
         midi_retrigger_req = false;
     }
 
+    // Panel analogico: una sola lectura + suavizado por bloque (1 kHz). Va aqui
+    // y no en el bucle principal para que env y filt los mute el mismo hilo que
+    // los llama a Process, igual que el reataque de arriba.
+#if POTS_ENABLED
+    controls_update();
+#endif
+
     // Ganancia de velocity suavizada. Estado persistente entre bloques: solo la
     // toca este hilo, asi que no necesita proteccion.
     static float vel_gain_smooth = 1.f;
+
+#if FILTER_ENABLED
+    // Se sacan del bucle: son constantes dentro del bloque.
+    const int ft = filt_type;
+#if FILTER_MAKEUP
+    // Compensacion de la ganancia de resonancia. El pico del Svf en la frecuencia
+    // de corte vale ~1/damp, con damp = 2*(1-Q^0.25): a Q alto son mas de 20 dB,
+    // suficientes para saturar la salida en cuanto un armonico de la wavetable cae
+    // cerca del corte. La correccion es cuadratica en Q y NEUTRA en Q=0.
+    const float res    = ctrl[POT_RES] * RES_MAX;
+    const float makeup = 1.f / (1.f + 2.f * res * res);
+#else
+    const float makeup = 1.f;
+#endif
+#endif
 
     for(size_t i = 0; i < size; i += 2)
     {
         vel_gain_smooth += (midi_vel_gain - vel_gain_smooth) * VEL_SMOOTH;
 
-        float amp = env.Process(midi_gate);        // envolvente MIDI (gate)
-        float s   = osc.NextSample() * amp * vel_gain_smooth * OUT_GAIN;
+        float s = osc.NextSample();                // VCO: wavetable + crossfade (S5)
+
+#if FILTER_ENABLED
+        // VCF: el Svf calcula las cuatro salidas a la vez, asi que elegir el tipo
+        // de filtro cuesta cero CPU. Es la ventaja concreta que decidio usarlo en
+        // lugar de MoogLadder.
+        filt.Process(s);
+        s = (ft == FILT_HPF) ? filt.High() : (ft == FILT_BPF) ? filt.Band()
+                                                              : filt.Low();
+        s *= makeup;
+#endif
+
+        float amp = env.Process(midi_gate);        // VCA: envolvente MIDI (gate)
+        s *= amp * vel_gain_smooth * OUT_GAIN;
+
         out[i]     = s;  // L
         out[i + 1] = s;  // R
     }
@@ -525,7 +915,7 @@ int main(void)
         hw.SetLed(true);  System::Delay(120);
         hw.SetLed(false); System::Delay(120);
     }
-    hw.PrintLine("=== SintetizadorEspacioLatente (S8) ===");
+    hw.PrintLine("=== SintetizadorEspacioLatente (S8 + bloque B) ===");
 #define TRACE(msg) hw.PrintLine("# init " msg)
 #else
 #define TRACE(msg)
@@ -546,11 +936,35 @@ int main(void)
     env.SetReleaseTime(ADSR_RELEASE);
     TRACE("env ok");
 
+    // Filtro del bloque B. Se inicializa SIEMPRE (aunque FILTER_ENABLED sea 0)
+    // para que no queden coeficientes sin definir si se activa mas tarde.
+    filt.Init(hw.AudioSampleRate());
+    filt.SetFreq(CUTOFF_MAX);
+    filt.SetRes(0.f);
+    filt.SetDrive(0.f);
+    TRACE("filtro ok");
+
+#if POTS_ENABLED
+    // Despues de env.Init(): controls_init() deja ctrl[] en el valor real de cada
+    // pote, y el primer bloque de audio ya escribe el ADSR encima de las
+    // constantes de S8.
+    controls_init();
+    TRACE("potes ok");
+#endif
+
     midi_init();
     TRACE("midi ok");
 
     spi_slave_init();
     TRACE("spi ok");
+
+#if OLED_ENABLED
+    // Antes de StartAudio: el driver transmite por I2C de forma bloqueante, y si
+    // el display no responde es preferible que se note en el arranque y no como
+    // cortes en un audio que ya esta sonando.
+    oled_init();
+    TRACE("oled ok");
+#endif
 
     hw.StartAudio(AudioCallback);
     TRACE("audio ok -- arranque completo");
@@ -562,6 +976,12 @@ int main(void)
     uint32_t last_blink = System::GetNow();
 #if HEARTBEAT
     uint32_t last_beat = System::GetNow();
+#endif
+#if POT_DEBUG && POTS_ENABLED
+    uint32_t last_pot = System::GetNow();
+#endif
+#if OLED_ENABLED
+    uint32_t last_oled = System::GetNow();
 #endif
 
     while(true)
@@ -592,6 +1012,39 @@ int main(void)
                          (unsigned)midi_events, (unsigned)spi_frames,
                          (int)midi_gate, held_count);
             last_beat = System::GetNow();
+        }
+#endif
+
+#if POT_DEBUG && POTS_ENABLED
+        // Volcado del panel cada 500 ms: crudo en milesimas (para ver que cada
+        // pote mueve SU canal y llega a los dos extremos) y ya mapeado (para ver
+        // que el rango es el que se pretendia). Es la comprobacion de cableado
+        // previa a fiarse del oido.
+        if(System::GetNow() - last_pot >= 500)
+        {
+            ControlView v = controls_view();
+            hw.PrintLine("# POT raw a=%d d=%d s=%d r=%d cut=%d q=%d sel=%d",
+                         (int)(ctrl[POT_ATTACK] * 1000.f),
+                         (int)(ctrl[POT_DECAY] * 1000.f),
+                         (int)(ctrl[POT_SUSTAIN] * 1000.f),
+                         (int)(ctrl[POT_RELEASE] * 1000.f),
+                         (int)(ctrl[POT_CUTOFF] * 1000.f),
+                         (int)(ctrl[POT_RES] * 1000.f),
+                         (int)(ctrl[POT_SELECT] * 1000.f));
+            hw.PrintLine("# POT map A=%dms D=%dms S=%d%% R=%dms cut=%dHz Q=%d%% %s",
+                         v.a_ms, v.d_ms, v.s_pct, v.r_ms, v.cut_hz, v.q_pct,
+                         filt_name(v.type));
+            last_pot = System::GetNow();
+        }
+#endif
+
+#if OLED_ENABLED
+        // oled_draw() se autolimita: si ningun valor mostrado ha cambiado, sale
+        // sin tocar el bus y el bucle no se bloquea.
+        if(System::GetNow() - last_oled >= OLED_PERIOD_MS)
+        {
+            oled_draw();
+            last_oled = System::GetNow();
         }
 #endif
 
