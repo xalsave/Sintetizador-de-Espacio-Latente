@@ -5,7 +5,8 @@
 //   - 6 potenciometros por ADC: A, D, S, R del envolvente (sustituyen a las
 //     constantes fijas de S8) + cutoff y resonancia de un filtro daisysp::Svf.
 //   - Selector ON-OFF-ON de tipo de filtro (LPF / BPF / HPF) leido por ADC.
-//   - OLED SSD1306 por I2C (pines fisicos 12 y 13) mostrando los seis valores.
+//   - OLED SSD1306 por I2C (pines fisicos 12 y 13) mostrando en grande el
+//     parametro que se esta tocando y, fijo abajo, el tipo de filtro.
 //
 // La cadena de audio pasa de  osc -> ADSR  a  osc -> Svf -> ADSR  (orden clasico
 // de sintesis sustractiva: VCO -> VCF -> VCA).
@@ -57,7 +58,7 @@
 #include "daisysp.h"   // daisysp::Adsr, daisysp::Svf (DaisySP enlazada, -ldaisysp)
 #include <cmath>       // powf, fabsf
 #include <cstring>     // memcpy
-#include <cstdio>      // sprintf (solo para las lineas del OLED)
+#include <cstdio>      // snprintf (solo para las lineas del OLED)
 
 using namespace daisy;
 
@@ -83,42 +84,9 @@ DaisySeed hw;
 // hasta donde llego el arranque; el latido distingue "vivo esperando" de "muerto".
 #define HEARTBEAT 1
 
-// --- Interruptores del bloque B ------------------------------------------- //
-// Estan separados A PROPOSITO: permiten encender el panel por partes durante la
-// puesta en marcha. Un pin de ADC sin cablear FLOTA y lee basura, asi que hasta
-// que un control no este fisicamente conectado su bloque debe quedarse a 0 o el
-// sintetizador parecera roto sin estarlo.
-
-// 0 -> ADSR con las constantes fijas de S8 (comportamiento identico al del 15 ago)
-#define POTS_ENABLED     1
-
-// 0 -> LPF fijo, sin leer el pin 28. Poner a 0 mientras el ON-OFF-ON y sus dos
-//      resistencias de 10k no esten montados.
-#define SELECTOR_ENABLED 1
-
-// 0 -> cadena de audio de S8 (osc -> ADSR), sin filtro. Util para A/B y para
-//      aislar si un ruido nuevo viene del filtro o de otra parte.
-#define FILTER_ENABLED   1
-
-// Compensacion de la ganancia de resonancia. El pico del Svf en la frecuencia de
-// corte llega a +20 dB con Q alto: sin esto, subir la resonancia satura la salida.
-// La formula es NEUTRA en Q=0 (factor 1.0), asi que no altera la calibracion de
-// nivel de S8 ni las medidas de THD, que se toman con la resonancia a cero.
-#define FILTER_MAKEUP    1
-
-// 0 hasta que el OLED este cableado. Se deja a 0 por defecto porque el driver
-// transmite por I2C en modo BLOQUEANTE: con el display ausente o mal cableado,
-// cada transferencia agota su timeout y el arranque se vuelve lentisimo.
-#define OLED_ENABLED     0
-
-// Direccion I2C del modulo. Casi todos los SSD1306 de 0.96" son 0x3C; algunos
+// Direccion I2C del OLED. Casi todos los SSD1306 de 0.96" son 0x3C; algunos
 // clones vienen a 0x3D (suele ir serigrafiado o depender de un puente).
-#define OLED_ADDR        0x3C
-
-// Volcado por serie de los 7 canales de ADC cada 500 ms (valor crudo en milesimas
-// y valor ya mapeado). Es la herramienta para verificar el cableado del panel
-// ANTES de fiarse del sonido: girar un pote y ver que se mueve el canal correcto.
-#define POT_DEBUG        1
+#define OLED_ADDR 0x3C
 
 // --------------------------------------------------------------------------- //
 // Configuracion
@@ -135,7 +103,7 @@ static const float OUT_GAIN    = 0.8f;
 
 // Envolvente ADSR (segundos / nivel 0..1). Desde el bloque B son solo los valores
 // de ARRANQUE: el ADSR queda gobernado por los cuatro potes en cuanto llega la
-// primera lectura del ADC. Con POTS_ENABLED a 0 vuelven a ser los definitivos.
+// primera lectura del ADC, unos milisegundos despues.
 static const float ADSR_ATTACK  = 0.005f;  // 5 ms
 static const float ADSR_DECAY   = 0.10f;   // 100 ms
 static const float ADSR_SUSTAIN = 0.70f;   // 70 %
@@ -651,9 +619,7 @@ static void controls_update()
     filt.SetFreq(map_exp(ctrl[POT_CUTOFF], CUTOFF_MIN, CUTOFF_MAX));
     filt.SetRes(ctrl[POT_RES] * RES_MAX);
 
-#if SELECTOR_ENABLED
     filt_type = decode_filt(ctrl[POT_SELECT]);
-#endif
 
     // ADSR: solo se reescribe cuando el pote se ha movido de verdad. Los cuatro
     // setters recalculan coeficientes con exponenciales, y llamarlos 4000 veces
@@ -699,9 +665,7 @@ static void controls_init()
     for(int i = 0; i < POT_COUNT; ++i)
         ctrl[i] = hw.adc.GetFloat(i);
 
-#if SELECTOR_ENABLED
     filt_type = decode_filt(ctrl[POT_SELECT]);
-#endif
 }
 
 
@@ -716,122 +680,244 @@ static void controls_init()
 // TRAMPA EVITADA: I2C1 sale tanto por PB8/PB9 (pines 12-13) como por PB6/PB7
 // (pines 14-15), y PB6/PB7 son el USART1 del MIDI. Coger el mapeo "por defecto"
 // habria cableado el OLED encima del MIDI. Van obligatoriamente en 12 y 13.
-#if OLED_ENABLED
+//
+// QUE MUESTRA: el parametro que se esta tocando en ese momento, en grande, con
+// su valor en unidades reales y una barra con la posicion del mando; y el tipo
+// de filtro, permanente, en la ultima linea. Con seis mandos y una pantalla de
+// 128x64, repartirla en seis casillas diminutas seria ilegible justo cuando hace
+// falta: mientras se gira un mando. El foco sigue al ultimo control movido y se
+// queda ahi, sin temporizadores ni vuelta automatica a ninguna pantalla base.
+//
+// Efecto util durante el montaje: el propio display es la comprobacion de
+// cableado. Se gira un mando y tiene que aparecer SU nombre. Si aparece otro, el
+// cursor esta en el pin equivocado.
+
 #include "dev/oled_ssd130x.h"
 
 using MyOled = OledDisplay<SSD130xI2c128x64Driver>;
 MyOled display;
 
-// Cada Update() manda el framebuffer entero (1 kB) de forma BLOQUEANTE: ~10 ms a
-// 1 MHz. Por eso solo se refresca cuando algun valor mostrado ha cambiado de
-// verdad: tocando el teclado sin mover mandos, el bucle principal no se detiene
-// nunca. El periodo es el limite superior, no la cadencia real.
-static const uint32_t OLED_PERIOD_MS = 150;
+// El instrumento tiene que sonar con o sin panel de display conectado, asi que
+// su presencia se detecta en el arranque en vez de darse por hecha. Motivo: el
+// driver transmite en modo BLOQUEANTE y no devuelve error, asi que sin esta
+// comprobacion un OLED ausente o mal cableado se traduciria en un arranque
+// lentisimo y en un bucle principal frenado en cada refresco.
+static bool oled_present = false;
 
-static void oled_init()
-{
-    MyOled::Config c;
-    auto&          i2c = c.driver_config.transport_config.i2c_config;
-    i2c.periph         = I2CHandle::Config::Peripheral::I2C_1;
-    // 1 MHz es el valor por defecto de libDaisy y va sobrado para 5 refrescos por
-    // segundo. Si en protoboard el display se corrompe (hilos largos, sin masa
-    // trenzada), bajar a I2C_400KHZ antes de sospechar de nada mas.
-    i2c.speed              = I2CHandle::Config::Speed::I2C_1MHZ;
-    i2c.mode               = I2CHandle::Config::Mode::I2C_MASTER;
-    i2c.pin_config.scl     = hw.GetPin(11);   // pin fisico 12 = PB8
-    i2c.pin_config.sda     = hw.GetPin(12);   // pin fisico 13 = PB9
-    c.driver_config.transport_config.i2c_address = OLED_ADDR;
+// Limite superior del refresco, no cadencia fija: oled_draw() sale sin tocar el
+// bus si no ha cambiado nada de lo que se ve. Tocando el teclado sin mover
+// mandos, el display no consume ni un ciclo. Cada Update() manda el framebuffer
+// entero (1 kB) y bloquea ~10 ms a 1 MHz.
+static const uint32_t OLED_PERIOD_MS = 80;
 
-    display.Init(c);
-    display.Fill(false);
-    display.SetCursor(0, 0);
-    display.WriteString("ESPACIO", Font_11x18, true);
-    display.SetCursor(0, 20);
-    display.WriteString("LATENTE", Font_11x18, true);
-    display.SetCursor(0, 48);
-    display.WriteString("TFG - GITST UPV", Font_6x8, true);
-    display.Update();
-}
-#endif  // OLED_ENABLED
+// Cuanto tiene que moverse un mando para robar el foco: 1 % del recorrido, muy
+// por encima del ruido del ADC ya suavizado y muy por debajo de un giro
+// intencionado. Sin este umbral el foco saltaria solo entre canales.
+static const float MOVE_EPS = 0.01f;
 
-
-// Valores ya mapeados a unidades humanas, para el OLED y el volcado por serie.
-// Se calculan en el bucle principal a partir de ctrl[]: enteros, porque el
-// printf del Daisy no lleva soporte de coma flotante fiable.
-struct ControlView
-{
-    int a_ms, d_ms, s_pct, r_ms, cut_hz, q_pct, type;
-};
-
-static ControlView controls_view()
-{
-    ControlView v;
-#if !POTS_ENABLED
-    // Sin potes, lo que gobierna son las constantes de S8: mostrar ctrl[] (que
-    // esta a cero) mentiria sobre lo que de verdad esta sonando.
-    v.a_ms   = (int)(ADSR_ATTACK * 1000.f);
-    v.d_ms   = (int)(ADSR_DECAY * 1000.f);
-    v.r_ms   = (int)(ADSR_RELEASE * 1000.f);
-    v.s_pct  = (int)(ADSR_SUSTAIN * 100.f + 0.5f);
-    v.cut_hz = (int)CUTOFF_MAX;
-    v.q_pct  = 0;
-    v.type   = filt_type;
-    return v;
-#else
-    v.a_ms   = (int)(map_exp(ctrl[POT_ATTACK],  ATTACK_MIN,  ATTACK_MAX)  * 1000.f);
-    v.d_ms   = (int)(map_exp(ctrl[POT_DECAY],   DECAY_MIN,   DECAY_MAX)   * 1000.f);
-    v.r_ms   = (int)(map_exp(ctrl[POT_RELEASE], RELEASE_MIN, RELEASE_MAX) * 1000.f);
-    v.s_pct  = (int)(ctrl[POT_SUSTAIN] * 100.f + 0.5f);
-    v.cut_hz = (int)map_exp(ctrl[POT_CUTOFF], CUTOFF_MIN, CUTOFF_MAX);
-    v.q_pct  = (int)(ctrl[POT_RES] * 100.f + 0.5f);
-    v.type   = filt_type;
-    return v;
-#endif
-}
+static int   focus = POT_CUTOFF;    // parametro mostrado; el corte es el de arranque
+static float focus_ref[POT_COUNT];  // valor de cada canal la ultima vez que movio
 
 static const char* filt_name(int t)
 {
     return (t == FILT_LPF) ? "LPF" : (t == FILT_BPF) ? "BPF" : "HPF";
 }
 
-#if OLED_ENABLED
+// Longitud del texto del valor. Cuatro cifras, punto y unidad corta caben de
+// sobra; se formatea con snprintf y este tamano explicito para que el limite sea
+// del compilador y no de la confianza en que el mapeo nunca se desmadre.
+static const size_t VAL_CHARS = 12;
+
+// Formatean a entero y devuelven la unidad, porque el printf del Daisy no lleva
+// soporte de coma flotante fiable. Por debajo de 1000 se muestra la unidad
+// pequena (ms, Hz) y por encima la grande con un decimal (s, kHz): asi el numero
+// nunca pasa de cuatro cifras y entra en la fuente grande.
+static const char* fmt_time(char* dst, float seconds)
+{
+    int ms = (int)(seconds * 1000.f + 0.5f);
+    if(ms < 1000)
+    {
+        snprintf(dst, VAL_CHARS, "%d", ms);
+        return "ms";
+    }
+    snprintf(dst, VAL_CHARS, "%d.%d", ms / 1000, (ms % 1000) / 100);
+    return "s";
+}
+
+static const char* fmt_freq(char* dst, float hz)
+{
+    int h = (int)(hz + 0.5f);
+    if(h < 1000)
+    {
+        snprintf(dst, VAL_CHARS, "%d", h);
+        return "Hz";
+    }
+    snprintf(dst, VAL_CHARS, "%d.%d", h / 1000, (h % 1000) / 100);
+    return "kHz";
+}
+
+// Lo que se pinta, ya resuelto a texto. Se compara entero contra lo anterior
+// para decidir si hace falta refrescar.
+struct FocusView
+{
+    const char* name;
+    char        value[VAL_CHARS];
+    const char* unit;
+    int         bar;    // relleno de la barra, en pixeles (0..125)
+    int         type;   // tipo de filtro, para la linea de abajo
+};
+
+static FocusView focus_view()
+{
+    FocusView v;
+    v.type = filt_type;
+    v.bar  = (int)(ctrl[focus] * 125.f);
+    v.unit = "";
+
+    switch(focus)
+    {
+        case POT_ATTACK:
+            v.name = "ATTACK";
+            v.unit = fmt_time(v.value,
+                              map_exp(ctrl[POT_ATTACK], ATTACK_MIN, ATTACK_MAX));
+            break;
+        case POT_DECAY:
+            v.name = "DECAY";
+            v.unit = fmt_time(v.value,
+                              map_exp(ctrl[POT_DECAY], DECAY_MIN, DECAY_MAX));
+            break;
+        case POT_SUSTAIN:
+            v.name = "SUSTAIN";
+            snprintf(v.value, VAL_CHARS, "%d", (int)(ctrl[POT_SUSTAIN] * 100.f + 0.5f));
+            v.unit = "%";
+            break;
+        case POT_RELEASE:
+            v.name = "RELEASE";
+            v.unit = fmt_time(v.value,
+                              map_exp(ctrl[POT_RELEASE], RELEASE_MIN, RELEASE_MAX));
+            break;
+        case POT_CUTOFF:
+            v.name = "CUTOFF";
+            v.unit = fmt_freq(v.value,
+                              map_exp(ctrl[POT_CUTOFF], CUTOFF_MIN, CUTOFF_MAX));
+            break;
+        case POT_RES:
+            v.name = "RESONANCE";
+            snprintf(v.value, VAL_CHARS, "%d", (int)(ctrl[POT_RES] * RES_MAX * 100.f + 0.5f));
+            v.unit = "%";
+            break;
+        default:  // POT_SELECT: aqui el valor ES el tipo de filtro
+            v.name = "FILTER";
+            strcpy(v.value, filt_name(filt_type));
+            break;
+    }
+    return v;
+}
+
+// Pasa el foco al ultimo mando que se haya movido de verdad. Cada canal lleva su
+// propia referencia, asi que el ruido nunca acumula deriva suficiente para
+// disparar el cambio, y un mando quieto no compite con el que se esta girando.
+static void focus_update()
+{
+    for(int i = 0; i < POT_COUNT; ++i)
+    {
+        if(fabsf(ctrl[i] - focus_ref[i]) > MOVE_EPS)
+        {
+            focus        = i;
+            focus_ref[i] = ctrl[i];
+        }
+    }
+}
+
 static void oled_draw()
 {
-    static ControlView prev  = {-1, -1, -1, -1, -1, -1, -1};
-    ControlView        v     = controls_view();
+    static int  last_focus = -1, last_bar = -1, last_type = -1;
+    static char last_value[VAL_CHARS] = "";
+
+    FocusView v = focus_view();
 
     // Sin cambios visibles no se toca el bus: el Update() es lo caro.
-    if(v.a_ms == prev.a_ms && v.d_ms == prev.d_ms && v.s_pct == prev.s_pct
-       && v.r_ms == prev.r_ms && v.cut_hz == prev.cut_hz && v.q_pct == prev.q_pct
-       && v.type == prev.type)
+    if(focus == last_focus && v.bar == last_bar && v.type == last_type
+       && strcmp(v.value, last_value) == 0)
         return;
-    prev = v;
+    last_focus = focus;
+    last_bar   = v.bar;
+    last_type  = v.type;
+    strcpy(last_value, v.value);
 
-    char line[24];
     display.Fill(false);
 
     display.SetCursor(0, 0);
-    sprintf(line, "FILTRO %s", filt_name(v.type));
-    display.WriteString(line, Font_7x10, true);
+    display.WriteString(v.name, Font_11x18, true);
 
-    display.SetCursor(0, 14);
-    sprintf(line, "CUT %5d Hz", v.cut_hz);
-    display.WriteString(line, Font_6x8, true);
+    display.SetCursor(0, 22);
+    display.WriteString(v.value, Font_16x26, true);
 
-    display.SetCursor(0, 24);
-    sprintf(line, "Q   %5d %%", v.q_pct);
-    display.WriteString(line, Font_6x8, true);
+    // Unidad pegada al numero y alineada por abajo, como en un instrumento real.
+    display.SetCursor((uint16_t)(strlen(v.value) * 16 + 4), 38);
+    display.WriteString(v.unit, Font_7x10, true);
 
-    display.SetCursor(0, 38);
-    display.WriteString("ADSR", Font_7x10, true);
+    // Barra con la posicion fisica del mando. Da de un vistazo lo que el numero
+    // no dice: cuanto recorrido queda, que en una escala exponencial no se
+    // deduce del valor.
+    display.DrawRect(0, 50, 127, 53, true, false);
+    if(v.bar > 0)
+        display.DrawRect(1, 51, (uint_fast8_t)(1 + v.bar), 52, true, true);
 
-    display.SetCursor(0, 52);
-    sprintf(line, "%4d %4d %3d%% %4d", v.a_ms, v.d_ms, v.s_pct, v.r_ms);
+    char line[16];
+    sprintf(line, "FILTER  %s", filt_name(v.type));
+    display.SetCursor(0, 56);
     display.WriteString(line, Font_6x8, true);
 
     display.Update();
 }
-#endif  // OLED_ENABLED
+
+// Configuracion I2C comun al sondeo y al driver: un unico sitio donde estan los
+// pines, para que no puedan divergir.
+static I2CHandle::Config oled_i2c_config()
+{
+    I2CHandle::Config c;
+    c.periph = I2CHandle::Config::Peripheral::I2C_1;
+    // 1 MHz es el valor por defecto de libDaisy y va sobrado. Si en protoboard el
+    // display se corrompe (hilos largos, sin masa trenzada), bajar a I2C_400KHZ
+    // antes de sospechar de nada mas.
+    c.speed          = I2CHandle::Config::Speed::I2C_1MHZ;
+    c.mode           = I2CHandle::Config::Mode::I2C_MASTER;
+    c.pin_config.scl = hw.GetPin(11);   // pin fisico 12 = PB8
+    c.pin_config.sda = hw.GetPin(12);   // pin fisico 13 = PB9
+    return c;
+}
+
+// Sondeo de presencia: se manda un comando inocuo y se mira si hay ACK. Timeout
+// corto a proposito, para que un display ausente cueste 10 ms y no un arranque
+// entero.
+static bool oled_probe()
+{
+    I2CHandle i2c;
+    if(i2c.Init(oled_i2c_config()) != I2CHandle::Result::OK)
+        return false;
+
+    // 0x00 = byte de control "lo que sigue es comando"; 0xAE = display off.
+    uint8_t cmd[2] = {0x00, 0xAE};
+    return i2c.TransmitBlocking(OLED_ADDR, cmd, 2, 10) == I2CHandle::Result::OK;
+}
+
+static void oled_init()
+{
+    MyOled::Config c;
+    c.driver_config.transport_config.i2c_config  = oled_i2c_config();
+    c.driver_config.transport_config.i2c_address = OLED_ADDR;
+    display.Init(c);
+
+    display.Fill(false);
+    display.SetCursor(0, 4);
+    display.WriteString("ESPACIO", Font_11x18, true);
+    display.SetCursor(0, 24);
+    display.WriteString("LATENTE", Font_11x18, true);
+    display.SetCursor(0, 52);
+    display.WriteString("TFG - GITST UPV", Font_6x8, true);
+    display.Update();
+}
 
 
 // --------------------------------------------------------------------------- //
@@ -852,28 +938,23 @@ void AudioCallback(AudioHandle::InterleavingInputBuffer  in,
     // Panel analogico: una sola lectura + suavizado por bloque (1 kHz). Va aqui
     // y no en el bucle principal para que env y filt los mute el mismo hilo que
     // los llama a Process, igual que el reataque de arriba.
-#if POTS_ENABLED
     controls_update();
-#endif
 
     // Ganancia de velocity suavizada. Estado persistente entre bloques: solo la
     // toca este hilo, asi que no necesita proteccion.
     static float vel_gain_smooth = 1.f;
 
-#if FILTER_ENABLED
     // Se sacan del bucle: son constantes dentro del bloque.
     const int ft = filt_type;
-#if FILTER_MAKEUP
+
     // Compensacion de la ganancia de resonancia. El pico del Svf en la frecuencia
     // de corte vale ~1/damp, con damp = 2*(1-Q^0.25): a Q alto son mas de 20 dB,
     // suficientes para saturar la salida en cuanto un armonico de la wavetable cae
-    // cerca del corte. La correccion es cuadratica en Q y NEUTRA en Q=0.
+    // cerca del corte. La correccion es cuadratica en Q y NEUTRA en Q=0, asi que
+    // con la resonancia al minimo el nivel es exactamente el calibrado en S8 y las
+    // medidas de THD no la ven.
     const float res    = ctrl[POT_RES] * RES_MAX;
     const float makeup = 1.f / (1.f + 2.f * res * res);
-#else
-    const float makeup = 1.f;
-#endif
-#endif
 
     for(size_t i = 0; i < size; i += 2)
     {
@@ -881,7 +962,6 @@ void AudioCallback(AudioHandle::InterleavingInputBuffer  in,
 
         float s = osc.NextSample();                // VCO: wavetable + crossfade (S5)
 
-#if FILTER_ENABLED
         // VCF: el Svf calcula las cuatro salidas a la vez, asi que elegir el tipo
         // de filtro cuesta cero CPU. Es la ventaja concreta que decidio usarlo en
         // lugar de MoogLadder.
@@ -889,7 +969,6 @@ void AudioCallback(AudioHandle::InterleavingInputBuffer  in,
         s = (ft == FILT_HPF) ? filt.High() : (ft == FILT_BPF) ? filt.Band()
                                                               : filt.Low();
         s *= makeup;
-#endif
 
         float amp = env.Process(midi_gate);        // VCA: envolvente MIDI (gate)
         s *= amp * vel_gain_smooth * OUT_GAIN;
@@ -936,21 +1015,21 @@ int main(void)
     env.SetReleaseTime(ADSR_RELEASE);
     TRACE("env ok");
 
-    // Filtro del bloque B. Se inicializa SIEMPRE (aunque FILTER_ENABLED sea 0)
-    // para que no queden coeficientes sin definir si se activa mas tarde.
+    // Filtro del bloque B. Arranca abierto y sin resonancia; el primer bloque de
+    // audio ya lo pone donde digan los mandos.
     filt.Init(hw.AudioSampleRate());
     filt.SetFreq(CUTOFF_MAX);
     filt.SetRes(0.f);
     filt.SetDrive(0.f);
     TRACE("filtro ok");
 
-#if POTS_ENABLED
     // Despues de env.Init(): controls_init() deja ctrl[] en el valor real de cada
-    // pote, y el primer bloque de audio ya escribe el ADSR encima de las
-    // constantes de S8.
+    // pote, y el primer bloque de audio escribe el ADSR encima de las constantes
+    // de arranque.
     controls_init();
+    for(int i = 0; i < POT_COUNT; ++i)
+        focus_ref[i] = ctrl[i];   // que el arranque no cuente como "mando movido"
     TRACE("potes ok");
-#endif
 
     midi_init();
     TRACE("midi ok");
@@ -958,13 +1037,19 @@ int main(void)
     spi_slave_init();
     TRACE("spi ok");
 
-#if OLED_ENABLED
-    // Antes de StartAudio: el driver transmite por I2C de forma bloqueante, y si
-    // el display no responde es preferible que se note en el arranque y no como
-    // cortes en un audio que ya esta sonando.
-    oled_init();
-    TRACE("oled ok");
-#endif
+    // Antes de StartAudio: el driver de I2C bloquea, y es preferible que un
+    // display mal cableado se note en el arranque y no como cortes en un audio
+    // que ya esta sonando. Si no contesta, el instrumento sigue funcionando.
+    oled_present = oled_probe();
+    if(oled_present)
+    {
+        oled_init();
+        TRACE("oled ok");
+    }
+    else
+    {
+        TRACE("oled AUSENTE -- se sigue sin display");
+    }
 
     hw.StartAudio(AudioCallback);
     TRACE("audio ok -- arranque completo");
@@ -977,12 +1062,7 @@ int main(void)
 #if HEARTBEAT
     uint32_t last_beat = System::GetNow();
 #endif
-#if POT_DEBUG && POTS_ENABLED
-    uint32_t last_pot = System::GetNow();
-#endif
-#if OLED_ENABLED
     uint32_t last_oled = System::GetNow();
-#endif
 
     while(true)
     {
@@ -1015,38 +1095,16 @@ int main(void)
         }
 #endif
 
-#if POT_DEBUG && POTS_ENABLED
-        // Volcado del panel cada 500 ms: crudo en milesimas (para ver que cada
-        // pote mueve SU canal y llega a los dos extremos) y ya mapeado (para ver
-        // que el rango es el que se pretendia). Es la comprobacion de cableado
-        // previa a fiarse del oido.
-        if(System::GetNow() - last_pot >= 500)
-        {
-            ControlView v = controls_view();
-            hw.PrintLine("# POT raw a=%d d=%d s=%d r=%d cut=%d q=%d sel=%d",
-                         (int)(ctrl[POT_ATTACK] * 1000.f),
-                         (int)(ctrl[POT_DECAY] * 1000.f),
-                         (int)(ctrl[POT_SUSTAIN] * 1000.f),
-                         (int)(ctrl[POT_RELEASE] * 1000.f),
-                         (int)(ctrl[POT_CUTOFF] * 1000.f),
-                         (int)(ctrl[POT_RES] * 1000.f),
-                         (int)(ctrl[POT_SELECT] * 1000.f));
-            hw.PrintLine("# POT map A=%dms D=%dms S=%d%% R=%dms cut=%dHz Q=%d%% %s",
-                         v.a_ms, v.d_ms, v.s_pct, v.r_ms, v.cut_hz, v.q_pct,
-                         filt_name(v.type));
-            last_pot = System::GetNow();
-        }
-#endif
-
-#if OLED_ENABLED
-        // oled_draw() se autolimita: si ningun valor mostrado ha cambiado, sale
+        // Panel: seguir al mando que se este girando y refrescar el display. El
+        // foco se actualiza SIEMPRE (es una comparacion de siete floats), pero
+        // oled_draw() se autolimita: si no ha cambiado nada de lo que se ve, sale
         // sin tocar el bus y el bucle no se bloquea.
-        if(System::GetNow() - last_oled >= OLED_PERIOD_MS)
+        focus_update();
+        if(oled_present && System::GetNow() - last_oled >= OLED_PERIOD_MS)
         {
             oled_draw();
             last_oled = System::GetNow();
         }
-#endif
 
         // Apagar el LED 100 ms despues del ultimo parpadeo de trama SPI valida.
         if(System::GetNow() - last_blink >= 100)
