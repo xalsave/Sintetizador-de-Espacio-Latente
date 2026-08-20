@@ -1,5 +1,6 @@
 // main.cpp - Sesion 6/7 (S3): genera la wavetable por interpolacion bilineal
-// (S6) y, tras cada toque, la envia al Daisy por SPI (S7).
+// (S6) y, tras cada toque, la envia al Daisy por SPI (S7). Bloque A (20 ago):
+// ademas la devuelve diezmada a la CYD para que la dibuje.
 //
 // Dos entradas a la vez:
 //   1) UART en GPIO18  <- trama de 6 bytes de la CYD (entrada real).
@@ -8,17 +9,22 @@
 // Salida:
 //   - Por USB (Serial0): verificacion (celda+pesos, resumen, volcado WAVE_*).
 //   - Por SPI (maestro): la misma wavetable de 1024 muestras al Daisy (S7).
+//   - Por UART en GPIO17: 256 puntos int8 a la CYD, SOLO para pintar.
 //
 // NO se toca ni el grid ni la interpolacion bilineal (S6, ya validados con
-// 6_validate_s3.py): S7 solo anade el transporte SPI de lo que ya se calcula.
+// 6_validate_s3.py) ni el SPI hacia el Daisy (S7, congelado): el bloque A
+// solo anade un emisor mas sobre el UART que ya existia.
 
 #include <Arduino.h>
 #include <math.h>
 #include "interpolation.h"
 #include "uart_receiver.h"
 #include "spi_sender.h"
+#include "wave_sender.h"
 
-#define CYD_RX_PIN 18          // pin del S3 por el que entra el UART de la CYD
+#define CYD_RX_PIN   18        // pin del S3 por el que entra el UART de la CYD
+#define CYD_TX_PIN   17        // pin del S3 hacia la CYD (canal de vuelta, IO35)
+#define CYD_UART_BAUD 460800   // tiene que coincidir con el Serial1 de la CYD
 
 // Pines SPI del S3 hacia el Daisy (confirmados en S7; FSPI nativo del S3,
 // libres del flash/PSRAM octal del N16R8 y del UART de la CYD en GPIO18).
@@ -65,6 +71,9 @@ static void handle_coords(uint16_t x, uint16_t y, const char* src)
     // S7: enviar la wavetable recien calculada al Daisy por SPI.
     uint16_t seq = spi_send_wavetable(g_wave);
     Serial0.printf("# SPI enviado seq=%u (%d muestras)\n", seq, TABLE_LEN);
+    // Bloque A: y de vuelta a la CYD, la misma onda diezmada para que la pinte.
+    uint16_t wseq = wave_send(g_wave, TABLE_LEN);
+    Serial0.printf("# UART onda -> CYD seq=%u (%d puntos int8)\n", wseq, WAVE_TX_POINTS);
     Serial0.println("tabla encontrada");
     // (El volcado de las 1024 muestras sigue disponible bajo demanda: escribe
     //  "dump" por USB; "stat" para solo el resumen min/max/rms.)
@@ -106,12 +115,15 @@ void setup()
     Serial0.println();
     Serial0.println("=== S3 bilinear + SPI (sesion 7) ===");
     Serial0.printf("Grid %dx%d, TABLE_LEN=%d\n", GRID_SIZE, GRID_SIZE, TABLE_LEN);
-    Serial0.println("Entradas: UART(GPIO18) desde la CYD  |  texto \"x y\" por USB");
+    Serial0.printf("UART con la CYD: RX=GPIO%d  TX=GPIO%d  @%u baud\n",
+                   CYD_RX_PIN, CYD_TX_PIN, CYD_UART_BAUD);
+    Serial0.println("Entradas: UART desde la CYD  |  texto \"x y\" por USB");
     Serial0.printf("SPI maestro -> Daisy: SCK=%d MOSI=%d MISO=%d CS=%d @10MHz modo0\n",
                    SPI_SCK_PIN, SPI_MOSI_PIN, SPI_MISO_PIN, SPI_CS_PIN);
 
-    // UART fisico hacia/desde la CYD: solo recibimos, en GPIO18.
-    uart_rx_begin(CYD_RX_PIN);
+    // UART fisico con la CYD, ahora en los dos sentidos: recibimos la coordenada
+    // por GPIO18 y devolvemos la onda para pintar por GPIO17.
+    uart_rx_begin(CYD_RX_PIN, CYD_TX_PIN, CYD_UART_BAUD);
 
     // SPI maestro hacia el Daisy.
     spi_tx_begin(SPI_SCK_PIN, SPI_MISO_PIN, SPI_MOSI_PIN, SPI_CS_PIN);
