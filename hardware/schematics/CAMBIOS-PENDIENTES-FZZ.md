@@ -1,166 +1,192 @@
 # Cambios pendientes en el Fritzing
 
 > **Fichero base:** `sistema-midi-cyd-daisy-VEROBOARD-FINAL.fzz` (16 ago, 02:31)
-> **Fichero destino:** `sistema-midi-cyd-daisy-VEROBOARD-FINAL-v2.fzz`
-> **Guardar como versión nueva, no sobrescribir.** El FINAL es la última versión que
-> corresponde al montaje de protoboard que funcionó el 15 de agosto.
+> **Fichero destino:** `sistema-midi-cyd-daisy-VEROBOARD-FINAL-v2.fzz` — **ya creado**
+> (copia del FINAL hecha el 21 ago). Trabajar sobre la v2; el FINAL no se toca.
 >
-> La especificación que manda es `docs/veroboard.md` §6ter y §6quinquies. Esto es
-> solo la lista de diferencias, para no tener que releer el documento entero.
+> **La especificación que manda es `docs/veroboard.md` §6sexies.** El §6ter y el
+> §6quinquies quedaron anulados el 21 de agosto.
+
+**Revisión del 21 de agosto.** Esta lista se reescribió entera después de decodificar el
+`.fzz` hueco a hueco (la propiedad `buses` del stripboard y los 44 cables). **La versión
+anterior tenía dos errores que habrían roto el fichero**, anotados abajo para que no se
+repitan.
 
 Coordenadas en **(tira, posición)**: tira 1…39 perpendicular al cobre, posición 1…63 a
-lo largo. Tira 1 = raíl +5 V, tira 39 = raíl GND.
+lo largo. **Tira 1 = raíl GND · tira 2 = raíl +5 V.** *(La versión anterior de este
+documento decía tira 1 = +5 V y tira 39 = GND: eso es el §6ter, que nunca llegó al
+fichero.)*
 
 ---
 
-## 1. Inventario actual del `.fzz` (leído del XML)
+## 0. Lo que el fichero YA tiene bien (no tocar)
 
-| Rótulo | Pieza | `modelIndex` | Valor |
+Comprobado net a net el 21 de agosto. Está todo correcto contra el pinout del §2:
+
+- **52 cortes** trazados: 22 del S3 (tiras 1–22, entre pos 6 y 7), 20 del Daisy (tiras
+  20–39, entre 41 y 42), 6 de separación (tiras 17–22, entre 19 y 20), 3 de raíles
+  locales (tiras 23‑24‑25, entre 47 y 48) y 1 de la rama de la CYD (tira 3, entre 21 y 22).
+- Los **4 puentes del SPI**, los 2 hilos de la CYD, el `RX` del MIDI, el jack (punta a
+  la tira 37, manguito a la 39 lado A), el OLED y el mazo de los seis potes con el
+  selector.
+- El **puente de `AGND` que cruza la línea de cortes** (tira 39 pos 35 → `AGND local`).
+- **`C3` ya existe**: es el `C9` (idx 10072), 100 nF entre las tiras 20 y 21 en la
+  posición 49, o sea entre los pines 40 y 39 del Daisy. Llevaba desde el 8 de agosto
+  anotado como pendiente. **Se da por cerrado.**
+- **`D1`** (tira 2 → tira 3, pos 41) y su corte de aislamiento.
+
+---
+
+## 1. Los duplicados: cuál es cuál ⚠️ ERROR CORREGIDO
+
+**No están superpuestos.** Son dos juegos distintos y solo uno está conectado:
+
+| Juego | `modelIndex` | Dónde está | Estado |
 |---|---|---|---|
-| A1 | Shield MIDI | 100 | |
-| U1 | Daisy Seed 40 pin | 110 | |
-| U3 | CYD ESP32-2432S028R | 130 | |
-| A2 | ESP32-S3 DevKit | 7636 | |
-| Power plug1 | Conector de alimentación | 7436 | |
-| Stripboard1 | Veroboard 63×39 | 9926 | |
-| C1, C2 | Electrolítico | 9001, 9002 | 100 µF / 50 V |
-| R1, R2, R3 | Resistencia | 9003, 9004, 9005 | **10 Ω** |
-| C4, C5, C6, C7 | Electrolítico | 9007–9010 | 100 µF / 50 V |
-| C4, C5, C6, C7 | Electrolítico | **10348–10351** | 100 µF / 50 V |
-| C8 | Cerámico | 9011 | 100 nF / 50 V |
-| C8 | Cerámico | **10352** | 100 nF / 35 V |
-| C9 | Cerámico | 10072 | 100 nF / 35 V |
-| D1 | Diodo Schottky 1N5817 | 9012 | |
-| POT A/D/S/R/CUT/Q | Potenciómetro 9 mm | 10362–10382 | |
-| SELECTOR filtro | Conmutador SPDT Taiway | 10386 | |
-| OLED 0.96 I2C | OLED | 10390 | |
-| JACK 3.5mm audio | Jack | 10395 | |
+| `C4`–`C7` + `C8` | **9007, 9008, 9009, 9010, 9011** | Coordenadas negativas, **fuera del lienzo** | 🗑️ **Huérfanos.** Cuelgan de un breadboard (`modelIndex 7374`) que ya no existe en el fichero. Restos de la protoboard |
+| `C4`–`C7` + `C8` | **10348, 10349, 10350, 10351, 10352** | Tira 1 ↔ tira 2, posiciones 19, 23, 27, 31 y 35 | ✅ **Los buenos.** Son el bulk real y el 100 nF del raíl |
 
-⚠️ **Hay rótulos duplicados**: dos juegos de `C4`–`C7` y dos `C8`. Son ocho
-electrolíticos de 100 µF donde el diseño solo pedía cuatro de bulk más dos de filtro.
-Casi seguro es un pegado accidental. **Primera tarea: abrir el fichero y comprobar si
-las cuatro de `modelIndex` 10348–10351 están encima de las 9007–9010.** Si lo están, se
-borran las cuatro y ya.
+> 🔴 **La versión anterior de este documento mandaba borrar los 10348–10352 "por
+> duplicados" y conservar los 9007–9011.** Habría borrado el bulk real de la placa y
+> dejado cinco componentes fantasma sin conectar a nada.
 
 ---
 
 ## 2. BORRAR
 
-| Qué | Por qué |
-|---|---|
-| **R2 y R3** (idx 9004, 9005) | El filtro pasa de 3×10 Ω en paralelo a **una sola 3R3 de 1 W** |
-| **C5, C6, C7** del juego de bulk (idx 9008, 9009, 9010) | El bulk pasa de 4×100 µF a **un solo 470 µF** |
-| **El juego duplicado C4–C7** (idx 10348–10351) y el **C8 duplicado** (idx 10352) | Duplicados, si se confirma el §1 |
+| Qué | `modelIndex` | Por qué |
+|---|---|---|
+| `C4`, `C5`, `C6`, `C7`, `C8` **huérfanos** | 9007, 9008, 9009, 9010, 9011 | Restos de la protoboard, sin conexión válida |
+| **`R2` y `R3`** | 9004, 9005 | El filtro pasa de 3×10 Ω en paralelo a **una sola 3R3 de 1 W** |
+| **Tres de los cuatro** electrolíticos del bulk | 10349, 10350, 10351 | El bulk pasa de 4×100 µF a **un solo 470 µF** |
 
-Al borrar en Fritzing se van también sus cables. **Antes de borrar, anota a qué estaba
-conectado cada uno**, porque el 470 µF y la 3R3 tienen que heredar esas conexiones.
+**Conservar:** `C1` y `C2` (9001, 9002 — los dos 100 µF del filtro), `R1` (9003),
+`C9` (10072 — el `C3`), `D1` (9012), `C4` (10348) y `C8` (10352).
+
+Al borrar en Fritzing se van también sus cables. `R2` y `R3` iban de la tira 21 a la 23
+(posiciones 53 y 55); esas dos posiciones quedan libres y no hay que heredar nada,
+porque `R1` ya ocupa la 51 con las mismas dos tiras.
 
 ---
 
 ## 3. CAMBIAR valor
 
-| Pieza | Antes | Ahora |
-|---|---|---|
-| **R1** (idx 9003) | 10 Ω | **3,3 Ω**, y rotularla `R1 — 3R3 1 W FUSIBLE` |
-| **C4** del bulk (idx 9007) | 100 µF | **470 µF**, y rotularla `C_BULK — 470 µF` |
-| C1, C2 (idx 9001, 9002) | 100 µF | *sin cambio* — son los dos del filtro del Daisy |
+| Pieza | idx | Antes | Ahora |
+|---|---|---|---|
+| **`R1`** | 9003 | 10 Ω | **3,3 Ω**, rotular `R1 — 3R3 1 W FUSIBLE` |
+| **`C4`** | 10348 | 100 µF | **470 µF**, rotular `C_BULK — 470 µF` |
+| `C1`, `C2` | 9001, 9002 | 100 µF | *sin cambio* — son los dos del filtro del Daisy |
+| `C9` | 10072 | 100 nF | *sin cambio* — rotular `C3 — 100 nF (pines 39‑40)` para que se reconozca |
 
-⚠️ El 470 µF real es un **Nichicon FW de ráster 5 mm** y va entre dos filas contiguas
+⚠️ El 470 µF real es un **Nichicon FW de ráster 5 mm** y va entre dos tiras contiguas
 (2,54 mm): hay que apretarle las patas hacia dentro. En el Fritzing da igual, pero
 conviene que el rótulo lo recuerde.
 
 ---
 
-## 4. AÑADIR
+## 4. RECOLOCAR: la sección de alimentación se va al final de la placa
 
-### a) Interruptor de red — la pieza nueva importante
-
-- **Pieza:** un SPDT igual que el del selector de filtro (duplica el `Taiway`, idx
-  10386). Se usan **solo el común y un extremo**; el otro extremo queda al aire.
-- **Rótulo:** `SW1 — interruptor de red (PANEL)`
-- **Colocación:** **fuera de la placa**, junto al resto de los mandos de panel.
-- **Dos cables:**
-  - común → **(tira 1, posición 4)** — lado sin conmutar, el del bulk
-  - un extremo → **(tira 1, posición 6)** — lado conmutado, el que alimenta todo
-
-### b) Los tres cortes de aislamiento nuevos
-
-Fritzing dibuja los cortes de stripboard haciendo clic en el tramo de pista entre dos
-agujeros. Los que faltan:
-
-| Corte | Dónde | Para qué |
-|---|---|---|
-| **Raíl +5 V** | **tira 1, entre posiciones 5 y 6** | Poner el interruptor aguas abajo del bulk |
-| **MIDI** | **tiras 34 y 35, entre posiciones 31 y 32** | 🔴 Aísla el +5 V y el GND del conector MIDI de `AUDIO IN L/R` (pines 16 y 17) |
-| **`AGND local`** | **tira 30, entre posiciones 42 y 43** | Raíl de masa analógica para los seis 100 nF de los cursores |
-| **`3V3D local`** | **tira 24, entre posiciones 32 y 33** | Lleva el 3V3 digital del lado B al conector del OLED, que está en el lado A |
-
-### c) Puentes que alimentan esos tramos aislados
-
-| Desde | Hasta |
-|---|---|
-| tira 1 (raíl +5 V, lado conmutado) | tira 34, posición ~29 → **+5 V del conector MIDI** |
-| tira 39 (raíl GND) | tira 35, posición ~29 → **GND del conector MIDI** |
-| tira 38 **lado A** (pin 20, `AGND`) | tira 30, posición ~44 → **`AGND local`** |
-| tira 21 **lado B** (pin 38, `3V3D`) | tira 24, posición ~30 → **`3V3D local`** |
-
-### d) Los seis 100 nF de los cursores
-
-No están en el fichero. Seis cerámicos de 100 nF, cada uno de su tira de cursor a la
-tira 30 (`AGND local`), **escalonados entre las posiciones 50 y 60** para que no se
-estorben al soldar:
-
-| Pote | Tira del cursor | A tira 30 |
-|---|---|---|
-| Attack | 37 | 7 tiras — formar patas |
-| Decay | 36 | 6 tiras — formar patas |
-| Sustain | 35 | 5 tiras |
-| Release | 34 | 4 tiras |
-| Cutoff | 33 | 3 tiras |
-| Q | 32 | 2 tiras |
-
-### e) Las dos 10 kΩ del divisor del selector
-
-Tampoco están. Van **en la placa**, no en el panel:
-
-- una de **tira 38** (`3V3A`) a **tira 31** (`SEL`)
-- otra de **tira 31** (`SEL`) a **tira 30** (`AGND local`)
-
----
-
-## 5. RECOLOCAR
-
-El ESP32-S3 **se desplaza dos posiciones** para dejar sitio al bulk, al corte del raíl y
-a los dos hilos del interruptor:
+Decidido el 21 de agosto (razonamiento en `veroboard.md` §6sexies). El interruptor
+necesita que el corte del raíl quede aguas arriba de **todas** las cargas, y la entrada
+estaba en la posición 15, por detrás del S3 (que se alimenta en la 11).
 
 | Elemento | Antes | Ahora |
 |---|---|---|
-| S3 — fila sin uso (pines 23–44) | posición 6 | **posición 8** |
-| S3 — línea de corte | posición 11 | **posición 13** |
-| S3 — fila usada (pines 1–22) | posición 16 | **posición 18** |
-| Conectores JST de la CYD | 19–24 | **20–24** |
+| Cable `ALIM +5V` | (tira 2, pos 15) | **(tira 2, pos 63)** |
+| Cable `ALIM GND` | (tira 1, pos 15) | **(tira 1, pos 63)** |
+| `C_BULK` 470 µF (10348) | tira 1↔2, pos 19 | **tira 1↔2, pos 61** ⚠️ polaridad: **+ a la tira 2** |
+| `C8` 100 nF (10352) | tira 1↔2, pos 35 | **tira 1↔2, pos 60** |
 
-El Daisy **no se mueve** (filas en 34 y 40, corte en 37).
+**Los módulos NO se mueven.** El S3 se queda con las filas en las posiciones 1 y 11 y el
+Daisy en la 39 y la 45.
 
 ---
 
-## 6. DECIDIR antes de dibujar
+## 5. AÑADIR
 
-**El diodo `D1` (1N5817) del diodo-OR de la CYD.** Con el rail medido a 4,40 V y la CYD
-a 4,07 V, añadirle un Schottky en serie le quita otros ~0,35 V y la deja en **~3,7 V**,
-por debajo de lo que su AMS1117 necesita para regular con holgura.
+### a) El corte del raíl +5 V
 
-➡️ **El diodo-OR ya no sale gratis.** O se quita del diseño (y entonces hay que
-desconectar el raíl para flashear la CYD por USB), o se mantiene y se acepta el margen.
-**No dibujarlo hasta decidirlo.**
+**Tira 2, entre las posiciones 58 y 59.** Es el único corte nuevo del fichero, y el
+único de un raíl en toda la placa. **La tira 1 (GND) no se corta aquí.**
+
+### b) Interruptor de red
+
+- **Pieza:** un SPDT igual que el del selector de filtro (duplicar el `Taiway`, idx
+  10386). Se usan **solo el común y un extremo**; el otro queda al aire.
+- **Rótulo:** `SW1 — interruptor de red (PANEL)`
+- **Colocación:** **fuera de la placa**, junto al resto de los mandos de panel.
+- **Dos cables:**
+  - común → **(tira 2, posición 59)** — lado sin conmutar, el del bulk
+  - un extremo → **(tira 2, posición 58)** — lado conmutado, el que alimenta todo
+
+### c) Mover el `AGND local` de la tira 25 a la tira 31
+
+Deja el mazo de potes en **nueve tiras seguidas (31 a 39)**, o sea un único conector
+contiguo, y acerca los seis 100 nF de 8–13 tiras a 2–7.
+
+1. **Nuevo corte: tira 31, entre las posiciones 47 y 48.**
+2. **Quitar el corte de la tira 25** (entre 47 y 48): deja de hacer falta.
+3. Mover el extremo del cable `AGND -> zona de potes` de `(tira 25, pos 48)` a
+   **`(tira 31, pos 48)`**. El otro extremo se queda en `(tira 39, pos 35)`.
+4. Mover los seis cables `POT x AGND` y el `SELECTOR AGND` de la tira 25 a la **tira 31**
+   (posiciones 49, 51, 53, 55, 57, 59 y 61, sin cambio).
+
+⚠️ La tira 31 es `OLED SCL` (pin 12) en el **lado A**. El corte va en el lado B, así que
+no la afecta — pero es exactamente el tipo de cosa que hay que volver a mirar si algún
+día se mueve el OLED.
+
+### d) Los seis 100 nF de los cursores
+
+No están en el fichero. Seis cerámicos, cada uno de su tira de cursor a la **tira 31**
+(`AGND local`), **escalonados entre las posiciones 50 y 60** para que no se estorben al
+soldar:
+
+| Pote | Tira del cursor | Salto hasta la 31 |
+|---|---|---|
+| Attack | 38 | 7 tiras — formar patas |
+| Decay | 37 | 6 tiras — formar patas |
+| Sustain | 36 | 5 tiras |
+| Release | 35 | 4 tiras |
+| Cutoff | 34 | 3 tiras |
+| Q | 33 | 2 tiras |
+
+### e) Las dos 10 kΩ del divisor del selector
+
+Van **en la placa**, no en el panel:
+
+- una de la **tira 39** (`3V3A`) a la **tira 32** (`SEL`)
+- otra de la **tira 32** a la **tira 31** (`AGND local`)
+
+### f) `D1` se queda
+
+Decidido el 21 de agosto: **se mantiene el diodo-OR**. Ya está dibujado (tira 2 → tira
+3, posición 41) y no hay que tocarlo. Añadir al rótulo: `D1 — 1N5817 (puentear si el
+raíl < 4,8 V)`.
+
+---
+
+## 6. OPCIONAL: header de 3 pines para el MIDI
+
+Tal como está, el shield sube tres hilos sueltos: `RX` a la tira 34 (pos 21) y `5V`/`GND`
+directos a los raíles (tiras 2 y 1, pos 53). Funciona y no necesita nada.
+
+Si se quiere un conector contiguo en las tiras 34‑35‑36:
+
+- 🔴 **obligatorio cortar las tiras 35 y 36 entre las posiciones 30 y 31.** Sin eso, el
+  conector mete **+5 V en `AUDIO IN L`** (pin 16, tira 35) y masa en `AUDIO IN R`.
+- header en la posición ~29, y dos puentes: tira 2 → (35, ~29) y tira 1 → (36, ~29).
 
 ---
 
 ## 7. Comprobación final antes de dar el fichero por bueno
 
-1. Que la **tira 39 (GND) no tiene ningún corte** en toda su longitud.
-2. Que la **tira 1 tiene exactamente un corte**, el de la posición 5.
-3. Que **no hay ningún componente ni puente bajo el cuerpo del Daisy ni del S3** — solo
-   las líneas de corte.
+1. Que la **tira 1 (GND) solo tiene el corte de la línea del S3** (entre 6 y 7), y
+   ninguno más en toda su longitud.
+2. Que la **tira 2 tiene exactamente dos cortes**: el de la línea del S3 (6‑7) y el
+   nuevo del interruptor (58‑59).
+3. Que **no hay ningún componente ni puente bajo el cuerpo del Daisy (pos 39–45) ni del
+   S3 (pos 1–11)** — solo las líneas de corte.
 4. Que el 470 µF y los dos 100 µF del filtro **no están pegados entre sí**.
-5. Que los 20 cortes del Daisy, los 22 del S3 y los 5 de separación siguen ahí.
+5. Que siguen ahí los 20 cortes del Daisy, los 22 del S3 y los 6 de separación.
+6. Que el recuento total de cortes es **53**: 52 del fichero − 1 (tira 25) + 1 (tira 31)
+   + 1 (tira 2, el del interruptor).
