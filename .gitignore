@@ -14,3 +14,21 @@ ml/exports/vae.pt
 
 # Credenciales locales (nunca deben ir versionadas)
 creds.txt
+
+# --- LaTeX: basura de compilacion ---
+memoria/plantilla latex/main.aux
+memoria/plantilla latex/main.log
+memoria/plantilla latex/main.out
+memoria/plantilla latex/main.toc
+memoria/plantilla latex/main.lof
+memoria/plantilla latex/main.lot
+memoria/plantilla latex/main.bcf
+memoria/plantilla latex/main.blg
+memoria/plantilla latex/main.bbl
+memoria/plantilla latex/main.glg
+memoria/plantilla latex/main.glo
+memoria/plantilla latex/main.gls
+memoria/plantilla latex/main.glsdefs
+memoria/plantilla latex/main.ist
+memoria/plantilla latex/main.run.xml
+memoria/plantilla latex.zip
