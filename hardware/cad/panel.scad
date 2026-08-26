@@ -123,14 +123,16 @@ oled_win_dy = 1.52;
 oled_lip_t = 0.6;
 // Distancia entre CENTROS de taladros, horizontal. NO confirmada: asume
 // 1,5 de cada borde. Si los agujeros no caen, medir y corregir esta
-oled_hole_pitch_x = 23;
+oled_hole_pitch_x = 22.6;
 // Distancia entre centros de taladros, vertical (del croquis: 22.000)
 oled_hole_pitch_y = 22;
 // Centro de la parrilla de taladros vs centro de la PCB: arriba estan a
 // 1,5 del borde y abajo a 2,5 -> la parrilla esta 0,5 subida
 oled_hole_dy = 0.5;
-// Broca del taladro: 3,0 reales + 0,4 de contraccion de impresion
-oled_screw_d = 3.4;
+// Broca del taladro. El OLED tiene agujeros de D2,0 -> tornillo M2: 2,4 de
+// paso + 0,3 de contraccion. El 3,4 de antes pasaba por el panel pero NO por
+// la placa (comprobado 25 ago)
+oled_screw_d = 3;
 // Descarga de las puntas de los pines: ancho (4 pines a 2,54 = 7,6 + margen)
 oled_pin_w = 13;
 // Descarga de pines: alto
@@ -178,7 +180,7 @@ cyd_bezel = 1.5;     // material que queda por delante del cristal
 // ESP32-Cheap-Yellow-Display (OriginalDocumentation/3-Structure_Diagram):
 // los cuatro estan a 4,0 mm de cada borde, separacion 78,0 x 42,0.
 cyd_screws   = true;
-cyd_screw_d  = 3.4;    // paso de un M3
+cyd_screw_d  = 3.6;    // paso de un M3. 3,4 entraba justo (probeta 25 ago)
 cyd_screw_xy = [[4, 4], [86 - 4, 4], [4, 50 - 4], [86 - 4, 50 - 4]];
 // El tornillo entra por DELANTE y lleva tuerca por detras. Los cuatro caen
 // FUERA del rebaje del modulo (x = 4 y 82 contra un rebaje de 8,5 a 78), o
@@ -200,12 +202,12 @@ labels       = true;
 // "relieve" -> letra saliente. Define mucho mejor en FDM, y permite un cambio
 //              de filamento a la altura panel_t para tener letras de otro
 //              color (en el laminador: pausa / cambio de color por capa).
-label_mode   = "relieve";   // [grabado, relieve]
+label_mode   = "grabado";   // [grabado, relieve]
 label_depth  = 1.0;   // profundidad del hueco si label_mode = "grabado"
                       // (0,6 era demasiado poco: solo tres capas)
 label_relief = 0.6;   // altura de la letra si label_mode = "relieve".
                       // Con "grabado" no se usa para nada.
-label_size   = 4.0;   // tamano MAXIMO; las etiquetas largas se encogen solas
+label_size   = 3.6;   // tamano MAXIMO; las etiquetas largas se encogen solas
 label_dy     = -11;   // desplazamiento respecto al centro del mando.
                       // -11 alinea la fila de potes con la etiqueta LPF
 pot_names    = ["ATTACK", "DECAY", "SUSTAIN", "RELEASE", "CUTOFF", "Q"];
@@ -223,7 +225,7 @@ label_font   = "Franklin Gothic Heavy";
 // 0,61 esta medido sobre el propio FRAHV.TTF y es cota superior de todas las
 // etiquetas de este panel: con el ninguna se encoge y ninguna se sale.
 // Si cambias de fuente y alguna invade a su vecina, sube este numero.
-label_aspect = 0.61;
+label_aspect = 0.60;
 label_max_w  = pot_pitch - 3;   // ancho util entre dos mandos contiguos
 
 /* [8. Que pieza exportar] */

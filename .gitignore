@@ -32,3 +32,8 @@ memoria/plantilla latex/main.glsdefs
 memoria/plantilla latex/main.ist
 memoria/plantilla latex/main.run.xml
 memoria/plantilla latex.zip
+
+# Copias de seguridad de trabajo
+*.bak
+*.bak[0-9]
+*.bad
