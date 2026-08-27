@@ -77,8 +77,39 @@
 // cada toque), tocar las cuatro esquinas del hueco VISIBLE y escribir aqui los
 // cuatro numeros leidos. La prediccion de arriba sirve de comprobacion: el
 // extremo que se mueva deberia hacerlo unos 240 cuentas, no 20 ni 800.
-int TS_MINX = 148,  TS_MAXX = 3962;
-int TS_MINY = 198,  TS_MAXY = 3902;
+//
+// >>> CALIBRACION MEDIDA EN BANCO, 27 ago 2026, con la placa YA MONTADA en la
+// carcasa. Tocando las cuatro esquinas del hueco visible del panel:
+//
+//        sup. izq. (480, 480)          sup. der. (3730, 250)
+//        inf. izq. (480,3730)          inf. der. (3730,3730)
+//
+// Hay DOS ventanas, y a proposito no son la misma:
+//
+//   VISIBLE (450..3730)  lo que asoma por el hueco del panel, medido en banco
+//                        tocando las cuatro esquinas. Solo se usa para calcular
+//                        el area de DIBUJO (VIS_* mas abajo), para que la imagen
+//                        llene todo lo que se ve.
+//
+//   CAPTURA (600..3580)  la que decide que toques valen. 150 cuentas (~2,5 mm)
+//                        mas estrecha por cada lado.
+//
+// El labio impreso apoya sobre el cristal en todo el perimetro y genera
+// pulsaciones fantasma pegadas al borde. Una que se colaba daba crudo
+// (3714, 643): a solo 16 cuentas del limite derecho, por eso pasaba el filtro.
+// Con 600..3580 queda fuera con holgura de sobra.
+//
+// Se abandonaron los ajustes finos por esquina: el tactil esta un pelo girado
+// respecto al hueco y un mapeo rectangular no puede corregir un giro, asi que
+// mas vale un cuadrado simetrico y predecible.
+//
+// OJO: es la ventana de CAPTURA la que se mapea a 0..65535, no la visible. Asi
+// el espacio latente se sigue alcanzando entero de extremo a extremo; lo unico
+// que se pierde son ~2,5 mm de recorrido del dedo por lado, no rango de timbre.
+// (La ventana visible no necesita constante propia: solo se usa una vez, para
+//  sacar los VIS_* de mas abajo, y ahi va la cuenta escrita.)
+int TS_MINX = 600,  TS_MAXX = 3580;    // ventana de CAPTURA, para el tactil
+int TS_MINY = 600,  TS_MAXY = 3580;
 
 // SPI dedicado para el tactil: sus pines NO son los de la pantalla. La pantalla
 // va por HSPI (ver USE_HSPI_PORT en platformio.ini) y el tactil por VSPI: son
@@ -90,8 +121,35 @@ TFT_eSPI tft = TFT_eSPI();
 // --- Geometria de la pantalla (rotacion 1 = apaisado, 320x240) ---------------
 static const int SCR_W    = 320;
 static const int SCR_H    = 240;
-static const int PLOT_TOP = 44;
-static const int PLOT_BOT = 236;
+
+// --- Area VISIBLE por la ventana del panel, en pixeles -----------------------
+// El panel impreso tapa un borde del cristal, asi que pintar de 0 a 320 deja
+// parte de la interfaz debajo del plastico. Estos cuatro numeros salen de pasar
+// la ventana VISIBLE a pixeles (450..3730 en crudo, NO la de captura),
+// sabiendo que el panel COMPLETO iba de 148 a 3962 en X y de 198 a 3902 en Y
+// (la calibracion anterior al recorte, ya espejada por el giro de 180):
+//
+//   x0 = (450-148)/(3962-148) * 320 =  25      y0 = (450-198)/(3902-198) * 240 = 16
+//   x1 = (3730-148)/(3962-148)* 320 = 300      y1 = (3730-198)/(3902-198)* 240 = 229
+//
+// Solo 1 px de margen: la primera version dejaba 2-3 px por lado "por si acaso"
+// y se notaba el desperdicio en pantalla. La ventana esta medida, no estimada.
+static const int VIS_X0 = 26;
+static const int VIS_X1 = 301;
+static const int VIS_Y0 = 17;
+static const int VIS_Y1 = 229;
+static const int VIS_W  = VIS_X1 - VIS_X0;
+static const int VIS_H  = VIS_Y1 - VIS_Y0;
+
+// Reparto vertical dentro del area visible (VIS_Y0 = 17):
+//   17..33  titulo (fuente 2, 16 px de alto)
+//   33..51  banda de estado x=/y=/seq/err
+//   56..227 recuadro de la onda  ->  PLOT_TOP-3 = 56, y 5 px de aire tras la
+//                                    banda de estado para que no se toquen.
+// La version anterior ponia el recuadro en 57 y la banda de estado acababa
+// justo en 57: la linea de arriba del rectangulo quedaba comida por el texto.
+static const int PLOT_TOP = VIS_Y0 + 42;                     // 59
+static const int PLOT_BOT = VIS_Y1 - 5;                      // 224
 static const int PLOT_CY  = (PLOT_TOP + PLOT_BOT) / 2;       // eje 0 de la onda
 static const int PLOT_AMP = (PLOT_BOT - PLOT_TOP) / 2 - 4;   // media altura util
 
@@ -172,7 +230,7 @@ static bool wave_rx_poll()
 
 // ================================ Pantalla ===================================
 
-static inline int x_of(int i) { return (i * (SCR_W - 1)) / (WAVE_POINTS - 1); }
+static inline int x_of(int i) { return VIS_X0 + (i * (VIS_W - 1)) / (WAVE_POINTS - 1); }
 static inline int y_of(int8_t v) { return PLOT_CY - ((int)v * PLOT_AMP) / 128; }
 
 // Patron de prueba de arranque: valida driver, orientacion y colores antes de
@@ -181,14 +239,18 @@ static void draw_test_pattern()
 {
     const uint16_t bars[8] = { TFT_RED, TFT_GREEN, TFT_BLUE, TFT_YELLOW,
                                TFT_CYAN, TFT_MAGENTA, TFT_WHITE, TFT_BLACK };
-    for (int i = 0; i < 8; ++i) tft.fillRect(i * 40, 0, 40, 120, bars[i]);
-    tft.drawRect(0, 0, SCR_W, SCR_H, TFT_WHITE);   // marco: confirma la orientacion
+    // Todo dentro del area visible: si el marco blanco se ve entero por los
+    // cuatro lados, la ventana del panel y estas constantes cuadran.
+    const int barw = VIS_W / 8;
+    for (int i = 0; i < 8; ++i)
+        tft.fillRect(VIS_X0 + i * barw, VIS_Y0, barw, 84, bars[i]);
+    tft.drawRect(VIS_X0, VIS_Y0, VIS_W, VIS_H, TFT_WHITE);
 
     tft.setTextColor(TFT_WHITE, TFT_BLACK);
-    tft.drawString("TFT_eSPI OK - ILI9341 320x240", 8, 132, 4);
-    tft.drawString("barras: rojo verde azul amarillo", 8, 168, 2);
-    tft.drawString("        cian magenta blanco negro", 8, 186, 2);
-    tft.drawString("si no cuadran: platformio.ini, nota 1", 8, 210, 2);
+    tft.drawString("TFT_eSPI OK", VIS_X0 + 6, VIS_Y0 + 92, 4);
+    tft.drawString("barras: rojo verde azul amarillo", VIS_X0 + 6, VIS_Y0 + 124, 2);
+    tft.drawString("        cian magenta blanco negro", VIS_X0 + 6, VIS_Y0 + 142, 2);
+    tft.drawString("marco blanco visible = ventana OK", VIS_X0 + 6, VIS_Y0 + 166, 2);
 }
 
 // Marco fijo: se pinta una vez y ya no se toca.
@@ -196,24 +258,24 @@ static void draw_ui_frame()
 {
     tft.fillScreen(COLOR_BG);
     tft.setTextColor(COLOR_TEXT, COLOR_BG);
-    tft.drawString("Sintetizador de Espacio Latente", 4, 2, 2);
+    tft.drawString("Sintetizador de Espacio Latente", VIS_X0 + 1, VIS_Y0, 2);
 
-    tft.drawRect(0, PLOT_TOP - 3, SCR_W, (PLOT_BOT - PLOT_TOP) + 6, COLOR_GRID);
-    for (int x = 0; x < SCR_W; x += 4) tft.drawPixel(x, PLOT_CY, COLOR_GRID);
+    tft.drawRect(VIS_X0, PLOT_TOP - 3, VIS_W, (PLOT_BOT - PLOT_TOP) + 6, COLOR_GRID);
+    for (int x = VIS_X0; x < VIS_X1; x += 4) tft.drawPixel(x, PLOT_CY, COLOR_GRID);
 
     tft.setTextColor(COLOR_DIM, COLOR_BG);
-    tft.drawString("esperando onda del S3...", 8, PLOT_CY - 8, 2);
+    tft.drawString("esperando onda del S3...", VIS_X0 + 6, PLOT_CY - 8, 2);
     s_have_prev = false;
 }
 
 static void draw_status()
 {
-    tft.fillRect(0, 20, SCR_W, 20, COLOR_BG);
+    tft.fillRect(VIS_X0, VIS_Y0 + 16, VIS_W, 18, COLOR_BG);
     tft.setTextColor(s_have_wave ? TFT_GREEN : COLOR_DIM, COLOR_BG);
     char buf[64];
     snprintf(buf, sizeof(buf), "x=%5u  y=%5u   seq=%u  err=%u",
              x_last, y_last, s_wave_seq, s_bad);
-    tft.drawString(buf, 4, 22, 2);
+    tft.drawString(buf, VIS_X0 + 1, VIS_Y0 + 17, 2);
 }
 
 // Redibuja la onda en dos pasadas: primero se borra entera la anterior y luego
@@ -235,8 +297,8 @@ static void draw_wave()
         }
     } else {
         // Primera onda: limpiar el "esperando onda del S3...".
-        tft.fillRect(1, PLOT_TOP - 2, SCR_W - 2, (PLOT_BOT - PLOT_TOP) + 4, COLOR_BG);
-        for (int x = 0; x < SCR_W; x += 4) tft.drawPixel(x, PLOT_CY, COLOR_GRID);
+        tft.fillRect(VIS_X0 + 1, PLOT_TOP - 2, VIS_W - 2, (PLOT_BOT - PLOT_TOP) + 4, COLOR_BG);
+        for (int x = VIS_X0; x < VIS_X1; x += 4) tft.drawPixel(x, PLOT_CY, COLOR_GRID);
     }
 
     for (int i = 0; i < WAVE_POINTS - 1; ++i)
@@ -303,7 +365,19 @@ void loop()
         t_touch = millis();
 
         if (ts.tirqTouched() && ts.touched()) {
-            TS_Point p = ts.getPoint();   // p.x, p.y crudos (~200..3900)
+            TS_Point p = ts.getPoint();   // p.x, p.y crudos
+
+            // Fuera de la ventana util -> se IGNORA por completo. Ni se envia
+            // wavetable al S3, ni se repinta la coordenada del display: el
+            // instrumento se queda exactamente como estaba. Antes se recortaba
+            // con constrain(), asi que un contacto del plastico de la carcasa
+            // se enviaba igual, clavado al borde del espacio latente.
+            if (p.x < TS_MINX || p.x > TS_MAXX ||
+                p.y < TS_MINY || p.y > TS_MAXY) {
+                Serial.printf("crudo=(%4d,%4d)  [fuera de ventana, ignorado]\n",
+                              p.x, p.y);
+                return;
+            }
 
             // Normaliza a 0..65535 con la calibracion.
             long nx = map(p.x, TS_MINX, TS_MAXX, 0, 65535);
