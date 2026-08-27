@@ -47,7 +47,11 @@ for nombre, x0, x1 in zip(etiquetas, fronteras[:-1], fronteras[1:]):
 
 ax.axhline(nivel_sustain, color=GRIS, linewidth=0.6, linestyle=":")
 
-ax.set_xlim(-0.05, fronteras[-1] + 0.15)
+# El eje se extiende mas alla del final de la envolvente para que la flecha
+# de tiempo no se solape con el tramo de liberacion
+margen_derecho = 1.4
+
+ax.set_xlim(-0.05, fronteras[-1] + margen_derecho)
 ax.set_ylim(-0.24, 1.16)
 ax.set_ylabel("Amplitud")
 ax.set_xticks([])
@@ -58,9 +62,9 @@ for lado in ("top", "right", "bottom"):
     ax.spines[lado].set_visible(False)
 
 # Eje de tiempo como flecha, para no chocar con las etiquetas de los tramos
-ax.annotate("", xy=(fronteras[-1] + 0.15, 0), xytext=(-0.05, 0),
+ax.annotate("", xy=(fronteras[-1] + margen_derecho - 0.45, 0), xytext=(-0.05, 0),
             arrowprops=dict(arrowstyle="->", color=GRIS, linewidth=0.8))
-ax.text(fronteras[-1] + 0.18, 0, "tiempo", ha="left", va="center",
-        fontsize=8, color=GRIS)
+ax.text(fronteras[-1] + margen_derecho - 0.38, 0, "tiempo", ha="left",
+        va="center", fontsize=8, color=GRIS)
 
 guardar(fig, "adsr")
