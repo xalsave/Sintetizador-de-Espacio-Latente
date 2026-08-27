@@ -18,11 +18,23 @@
 // Correspondencia pin fisico del Daisy -> argumento de hw.GetPin() (numeracion
 // "D" de libDaisy). NO coinciden, y confundirlos es cablear otro pin:
 //
-//   fisico 22 (PC0)  A0 = D15   Attack       fisico 26 (PA6)  A4 = D19   Cutoff
-//   fisico 23 (PA3)  A1 = D16   Decay        fisico 27 (PC1)  A5 = D20   Q
-//   fisico 24 (PB1)  A2 = D17   Sustain      fisico 28 (PC4)  A6 = D21   Selector
-//   fisico 25 (PA7)  A3 = D18   Release      fisico 21        3V3A (alimenta potes)
+//   fisico 22 (PC0)  A0  = D15  Attack       fisico 32 (PA0)  A10 = D25  Cutoff
+//   fisico 23 (PA3)  A1  = D16  Decay        fisico 27 (PC1)  A5  = D20  Q
+//   fisico 30 (PA4)  A8  = D23  Sustain      fisico 29 (PA5)  A7  = D22  Selector
+//   fisico 31 (PA1)  A9  = D24  Release      fisico 21        3V3A (alimenta potes)
 //   fisico 12 (PB8)  SCL = D11  OLED         fisico 13 (PB9)  SDA = D12  OLED
+//
+// REMAPEO DEL 27 AGO 2026: el trazado de la veroboard se calco en espejo y los
+// cortes ya taladrados impedian llevar cuatro cursores a sus pines originales,
+// asi que se adapto el firmware a la placa en vez de rehacerla. Cambian S, R,
+// cutoff y selector (24/25/26/28 -> 30/31/32/29); attack, decay y Q se quedan.
+// Q volvio a la tira 26 (pin 27, A5) porque los pines 33 y 34 son los UNICOS
+// del bloque 29-35 sin canal de ADC. Los pines 29 y 30 son ademas DAC OUT 2 y
+// DAC OUT 1, pero ConfigureDac() de libDaisy esta comentado entero, asi que
+// seed.Init() no los reclama y quedan libres para el ADC. Verificado tambien
+// que PA5/PA4/PA1/PA0 estan en adcpins[] de libDaisy/src/per/adc.cpp
+// (canales 19, 18, 17 y 16). Los pines 24, 25, 28, 29 y 30 son solo tolerantes
+// a 3,3 V: los potes cuelgan de 3V3A, asi que no hay conflicto.
 //
 // (En la columna derecha del conector, fisico = D + 7. Verificado contra la
 //  tabla seedgpio[] de libDaisy/src/daisy_seed.cpp.)
@@ -539,7 +551,7 @@ enum PotIdx
 
 // Indice para hw.GetPin() de cada canal, EN EL MISMO ORDEN que PotIdx. Ver la
 // tabla de correspondencia con los pines fisicos en la cabecera del fichero.
-static const uint8_t POT_PIN_D[POT_COUNT] = {15, 16, 17, 18, 19, 20, 21};
+static const uint8_t POT_PIN_D[POT_COUNT] = {15, 16, 23, 24, 25, 20, 22};
 
 // Rangos de mapeo. Tiempos y frecuencia van en escala EXPONENCIAL porque el oido
 // percibe las dos logaritmicamente: un pote lineal sobre un rango lineal dejaria
@@ -590,18 +602,20 @@ static inline float map_exp(float x, float lo, float hi)
     return lo * powf(hi / lo, x);
 }
 
-// Decodifica el selector ON-OFF-ON leido en el pin fisico 28. Las tres tensiones
+// Decodifica el selector ON-OFF-ON leido en el pin fisico 29. Las tres tensiones
 // las fija el divisor de dos resistencias de 10k descrito en veroboard.md:
-//   arriba (a 3V3A) = 3,3 V -> LPF   centro (abierto) = 1,65 V -> BPF
-//   abajo  (a AGND) = 0 V   -> HPF
+//   arriba (a 3V3A) = 3,3 V -> HPF   centro (abierto) = 1,65 V -> BPF
+//   abajo  (a AGND) = 0 V   -> LPF
+// El sentido se corrigio el 27 ago 2026: el panel ya esta impreso y serigrafiado
+// con HPF arriba, BPF en medio y LPF abajo, y el codigo lo tenia al reves.
 // El centro NO es un pin al aire: si lo fuera, flotaria y leeria basura. Son esas
 // dos resistencias las que lo mantienen clavado a media escala.
 // No hace falta antirrebote aparte: se decide sobre el valor ya suavizado, y los
 // ~30 ms del filtro de control son exactamente eso.
 static inline int decode_filt(float v)
 {
-    if(v > 0.75f) return FILT_LPF;
-    if(v < 0.25f) return FILT_HPF;
+    if(v > 0.75f) return FILT_HPF;
+    if(v < 0.25f) return FILT_LPF;
     return FILT_BPF;
 }
 

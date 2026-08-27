@@ -48,8 +48,37 @@
 #define WAVE_POINTS 256
 
 // --- Calibracion del tactil (valores CRUDOS del ADC del XPT2046 en esquinas) --
-int TS_MINX = 133,  TS_MAXX = 3947;
-int TS_MINY = 193,  TS_MAXY = 3897;
+//
+// 27 ago 2026 - GIRO DE 180 GRADOS. La CYD va montada al reves en el panel para
+// que el USB-C quede lejos del OLED, asi que se pasa de setRotation(1) a
+// setRotation(3) en la pantalla Y en el tactil. La libreria de PaulStoffregen
+// SI aplica la rotacion (XPT2046_Touchscreen.cpp, update(): case 3 hace
+// xraw = 4095 - x, yraw = 4095 - y, que es el espejo exacto del case 1), pero
+// por eso mismo los cuatro numeros de abajo dejan de valer tal cual: hay que
+// espejarlos tambien, con lim_nuevo = 4095 - lim_viejo cruzando min con max.
+//
+//   X: 133..3947  ->  4095-3947=148 .. 4095-133=3962
+//   Y: 193..3897  ->  4095-3897=198 .. 4095-193=3902
+//
+// RECORTE DE LA VENTANA DEL PANEL: el hueco impreso es de 56 x 45,5 mm sobre un
+// area visible de 59,5 x 45. En vertical la ventana es MAS ALTA que el area
+// visible, asi que Y no se recorta. En horizontal se tapan 3,5 mm, y no a
+// partes iguales: el labio izquierdo entra 4 mm mas que el derecho, o sea
+// L + R = 3,5 con L = R + 4  ->  L = 3,75 mm y R = -0,25 mm (el borde derecho
+// del hueco cae justo en el limite del area visible, o un pelo fuera).
+//
+// Sobre la escala cruda: 3962-148 = 3814 cuentas para 59,5 mm = 64,1 cuentas/mm,
+// luego 3,75 mm son ~240 cuentas. Solo UNO de los dos extremos de X se mete esas
+// 240 cuentas: cual de los dos depende de hacia donde apunta el eje X crudo con
+// la placa ya girada, y eso NO se puede deducir sobre el papel.
+//
+// >>> CALIBRAR CON LA PLACA YA MONTADA EN LA CARCASA. Procedimiento: flashear
+// con estos valores, abrir el monitor serie (que ya imprime "crudo=(x,y)" en
+// cada toque), tocar las cuatro esquinas del hueco VISIBLE y escribir aqui los
+// cuatro numeros leidos. La prediccion de arriba sirve de comprobacion: el
+// extremo que se mueva deberia hacerlo unos 240 cuentas, no 20 ni 800.
+int TS_MINX = 148,  TS_MAXX = 3962;
+int TS_MINY = 198,  TS_MAXY = 3902;
 
 // SPI dedicado para el tactil: sus pines NO son los de la pantalla. La pantalla
 // va por HSPI (ver USE_HSPI_PORT en platformio.ini) y el tactil por VSPI: son
@@ -231,7 +260,7 @@ void setup()
     digitalWrite(TFT_BL_PIN, HIGH);
 
     tft.init();
-    tft.setRotation(1);               // apaisado, 320x240
+    tft.setRotation(3);               // apaisado 320x240, GIRADO 180 (ver calibracion)
     tft.fillScreen(COLOR_BG);
     draw_test_pattern();
 
@@ -246,7 +275,7 @@ void setup()
     // Tactil en su SPI propio.
     touchSPI.begin(TOUCH_CLK, TOUCH_MISO, TOUCH_MOSI, TOUCH_CS);
     ts.begin(touchSPI);
-    ts.setRotation(1);                // orientacion del tactil; ajustable
+    ts.setRotation(3);                // MISMO giro que la pantalla, o el dedo va al reves
 
     delay(2000);                      // tiempo para mirar el patron de prueba
     draw_ui_frame();
