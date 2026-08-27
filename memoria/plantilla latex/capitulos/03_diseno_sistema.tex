@@ -1,2 +1,305 @@
 \chapter{Diseño del sistema}
 \label{cap:diseno}
+
+Este capítulo explica cómo se reparte el sistema entre las placas que lo
+componen, qué alternativas se valoraron antes de llegar a ese reparto y qué
+parámetros quedaron fijados antes de escribir la primera línea de firmware. La
+implementación concreta de cada bloque se trata en los capítulos 5, 6 y 7, y las
+medidas que verifican el diseño, en el capítulo 8. Aquí interesa el porqué de la
+estructura.
+
+\section{Requisitos y condicionantes de partida}
+\label{sec:requisitos}
+
+El instrumento tiene que atender dos tareas que operan en escalas de tiempo muy
+distintas. Una es producir una forma de onda nueva cuando el usuario mueve el
+dedo por la pantalla. La otra es entregar 48.000 muestras por segundo de forma
+ininterrumpida, sin que una espera de comunicación o un cálculo largo dejen el
+búfer de audio sin llenar. La primera admite unos milisegundos de retraso; la
+segunda no admite ninguno.
+
+De ahí sale el condicionante que gobierna todo el diseño y que ya se apuntó en
+el capítulo 1. La inferencia de una red neuronal no puede ejecutarse a
+frecuencia de audio sobre un microcontrolador, pero tampoco necesita hacerlo,
+porque un dedo sobre una pantalla no genera información nueva a 48~kHz. En este
+sistema el táctil se lee cada 50~ms, es decir, a 20~Hz, y solo se envía una
+coordenada cuando el punto se ha desplazado lo suficiente. Separar la generación
+de la tabla, que ocurre a frecuencia de control, de su reproducción, que ocurre
+a frecuencia de audio, es lo que hace viable el conjunto sobre hardware de bajo
+coste.
+
+Sobre esa base se fijaron los requisitos que el diseño debía cumplir:
+
+\begin{itemize}
+    \item \textbf{Continuidad del control.} El usuario recorre el plano latente
+          de forma continua, así que el cambio de una tabla a la siguiente no
+          puede producir discontinuidades audibles.
+    \item \textbf{Ejecución musical convencional.} La nota y la dinámica entran
+          por \gls{midi} estándar, y la envolvente y el filtro se gobiernan
+          desde mandos físicos, no desde la pantalla.
+    \item \textbf{Autonomía.} El instrumento genera el sonido en su propio
+          hardware, sin ordenador conectado.
+    \item \textbf{Integridad de la información.} La tabla que sale de una placa
+          tiene que llegar íntegra a la siguiente, y una trama dañada no puede
+          traducirse en ruido a la salida.
+    \item \textbf{Hardware comercial de bajo coste.} No se diseña ni se fabrica
+          ningún circuito integrado específico, y el reparto de tareas tiene que
+          caber en placas de desarrollo disponibles en el mercado.
+\end{itemize}
+
+\section{Alternativas consideradas}
+\label{sec:alternativas}
+
+Las tres decisiones que dan forma al sistema se tomaron antes de empezar a
+construirlo, contrastando cada una con la opción que se descartaba.
+
+\subsection{Ejecutar la red frente a precalcular una rejilla}
+
+La primera alternativa era ejecutar el decodificador dentro del propio
+instrumento, cuantizado a 8 bits y desplegado sobre el ESP32-S3, de modo que
+cada coordenada táctil produjera una forma de onda recién generada. La segunda
+era muestrear el plano latente por adelantado en el ordenador, obtener una
+rejilla de formas de onda ya decodificadas y embarcar esa rejilla, dejando al
+instrumento la consulta y la mezcla.
+
+Se adoptó la segunda como camino principal. Aunque la red solo tenga que
+trabajar a frecuencia de control, ejecutar el decodificador en cada toque
+introduce un tiempo de cálculo variable y difícil de acotar, sobre un procesador
+que además tiene que atender la comunicación con las otras dos placas. La
+rejilla precalculada convierte ese cálculo en un acceso a memoria y una
+interpolación, de coste conocido y constante. El precedente más cercano hace lo
+mismo por el mismo motivo, y conviene recordar que allí la limitación aparece
+incluso sobre una máquina con procesador gráfico de sobremesa
+\cite{Hantrakul2018}.
+
+El precio de esa decisión es que la resolución del espacio queda congelada en el
+momento de generar la rejilla, y que esa rejilla ocupa memoria. El decodificador
+embarcado se mantiene como ampliación, no como parte del camino crítico, y se
+retoma en el capítulo 9.
+
+\subsection{Dónde reside la rejilla}
+
+Fijada la rejilla, quedaba decidir en qué placa vive y, en consecuencia, qué
+viaja por el bus. Una opción era guardarla en la Daisy Seed, que dispone de
+memoria externa de sobra, y hacer que el ESP32-S3 le enviara únicamente la
+coordenada táctil, seis bytes por toque. La otra era guardarla en el ESP32-S3,
+hacer allí la interpolación y enviar a la Daisy la forma de onda completa, algo
+más de dos kilobytes por toque.
+
+Se eligió la segunda. La primera es más sencilla y mueve mucha menos
+información, pero carga al procesador de audio con una tarea que no le
+corresponde y, sobre todo, cierra la puerta a la ampliación del apartado
+anterior. Manteniendo la rejilla y la interpolación en el ESP32-S3, sustituirla
+más adelante por el decodificador ejecutándose a bordo no obliga a tocar el
+firmware de la Daisy, que sigue recibiendo exactamente lo mismo. El reparto
+resultante deja a cada placa una responsabilidad única, que es lo que permitió
+después validar cada etapa por separado.
+
+\subsection{Dónde se resuelve la transición entre tablas}
+
+Sustituir la tabla en reproducción mientras suena una nota produce un salto en
+la señal, audible como un chasquido. La transición puede resolverse de dos
+formas. Una es esperar a que el acumulador de fase complete el ciclo y cambiar
+la tabla justo en ese punto, con doble búfer. La otra es mezclar la tabla
+antigua y la nueva durante unos milisegundos, con pesos complementarios.
+
+Se optó por la mezcla, porque funciona con independencia de dónde esté la fase
+en el momento del cambio y porque encaja con el uso previsto, en el que el dedo
+se desplaza de forma continua y las tablas consecutivas se parecen mucho entre
+sí. Lo relevante para el diseño del sistema es dónde se hace. Solo la Daisy
+conoce la posición instantánea del acumulador de fase, ya que es quien recorre
+la tabla muestra a muestra. El ESP32-S3 no dispone de esa información y llegaría
+siempre tarde o pronto al punto de corte, así que la transición vive en el
+procesador de audio y no en el de control.
+
+\section{Arquitectura resultante}
+\label{sec:arquitectura}
+
+El sistema queda repartido entre tres microcontroladores con funciones
+separadas, tal como muestra la Figura~\ref{fig:arquitectura}.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=\textwidth]{arquitectura.pdf}
+    \caption{Arquitectura del sistema. Las flechas continuas son los enlaces
+             digitales entre placas, rotuladas con el medio y el tamaño de la
+             trama; las discontinuas, los periféricos del procesador de audio.}
+    \label{fig:arquitectura}
+\end{figure}
+
+La \gls{cyd} es la interfaz de usuario. Se trata de una placa que integra un
+ESP32 y una pantalla táctil resistiva de 2,8 pulgadas. Lee la posición del dedo,
+la normaliza a un rango de 16 bits por eje y la envía por \gls{uart}. En sentido
+contrario recibe la forma de onda que está sonando, reducida, y la dibuja en
+pantalla, de modo que el usuario ve el timbre que está seleccionando.
+
+El ESP32-S3 es el procesador de control. Aloja la rejilla de formas de onda en
+su memoria de programa, calcula la interpolación entre las cuatro celdas vecinas
+a la coordenada recibida y entrega el resultado al procesador de audio por
+\gls{spi}. Es también quien devuelve a la pantalla la versión reducida de la
+onda. Se eligió la variante con 16~MB de memoria de programa y 8~MB de
+\gls{psram}, con margen sobrado para la rejilla y para una eventual ampliación.
+
+La Daisy Seed es el procesador de audio. Reproduce la tabla que recibe mediante
+un acumulador de fase, resuelve la transición entre tablas, aplica el filtro y
+la envolvente, y entrega la señal por su conversor digital-analógico. Recibe
+además la nota y la dinámica por \gls{midi}, lee los seis potenciómetros y el
+selector del panel de control, y refleja en una pantalla OLED el mando que se
+está manipulando. No conoce la rejilla ni interpola, solo reproduce lo que le
+llega.
+
+El teclado que proporciona las notas queda fuera del conjunto. Se conecta
+exclusivamente por \gls{midi} DIN, cuyo aislamiento por optoacoplador evita que
+las dos masas se unan, y se alimenta de su propia fuente. Esa separación es
+deliberada, y su consecuencia es que el entregable de este trabajo es un módulo
+de sonido con teclado intercambiable y no un instrumento con teclado propio, que
+es además la práctica habitual en la instrumentación electrónica modular.
+
+\section{Fase de preparación y fase de ejecución}
+\label{sec:fases}
+
+El sistema opera en dos fases separadas en el tiempo y en el lugar, recogidas en
+la Figura~\ref{fig:pipeline}. La primera ocurre una sola vez, en el ordenador, y
+es la única en la que interviene la red neuronal. El corpus de formas de onda se
+homogeneiza, se entrena el autoencoder variacional, se muestrea el plano latente
+en una rejilla regular decodificando cada nodo, y el resultado se exporta como
+una cabecera en C que se compila junto al firmware del ESP32-S3. La segunda
+ocurre en el instrumento, en cada toque, y no ejecuta ninguna red.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=\textwidth]{pipeline.pdf}
+    \caption{Las dos fases de operación. La red neuronal solo interviene en la
+             fase de preparación; durante la ejecución el instrumento se limita
+             a consultar la rejilla, mezclar y reproducir.}
+    \label{fig:pipeline}
+\end{figure}
+
+Conviene aclarar qué contiene la rejilla, porque es el punto que sostiene toda
+la estrategia. Los 256 nodos no son una selección de las formas de onda del
+corpus. Una vez entrenado el modelo, el codificador reparte las ondas originales
+como puntos dispersos por un plano continuo, y el decodificador sabe generar una
+onda para cualquier posición de ese plano, incluidas las que no corresponden a
+ninguna onda real. Generar la rejilla es muestrear esa superficie continua en
+cruces regulares, de modo que la mayoría de los nodos son formas de onda nuevas.
+Lo aprendido a partir del corpus reside en los pesos del decodificador, y la
+rejilla es solo una captura de esa superficie a una resolución elegida. Lo que
+fija su tamaño, por tanto, es la finura con la que se navega el espacio y la
+memoria que se consume, no la variedad de timbres disponibles.
+
+La segunda cuestión es por qué basta con una interpolación lineal durante la
+ejecución, siendo la operación más simple posible. Hay dos motivos. El primero
+es que todas las formas de onda comparten una referencia de fase común, fijada
+en el preprocesado, con lo que no hay desalineamientos gruesos que puedan
+cancelarse al promediar. El segundo es que dos celdas contiguas de la rejilla no
+son dos ondas cualesquiera, sino dos puntos muy próximos de una función continua
+y suave, así que sus salidas se parecen mucho. Interpolar linealmente entre dos
+formas de onda casi idénticas deja un error pequeño, que además disminuye al
+aumentar la densidad de la rejilla. La interpolación con criterio ya ocurrió
+antes, cuando el decodificador generó los nodos; la de la fase de ejecución solo
+rellena el hueco fino que queda entre ellos.
+
+\section{Parámetros de diseño}
+\label{sec:parametros}
+
+La Tabla~\ref{tab:parametros} recoge los valores que se fijaron al principio y
+que no se modificaron después, porque condicionan a la vez el entrenamiento, el
+formato de las tramas y el motor de audio.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Parámetros de diseño fijados antes de la implementación.}
+    \label{tab:parametros}
+    \begin{tabular}{ll}
+        \toprule
+        \textbf{Parámetro} & \textbf{Valor} \\
+        \midrule
+        Muestras por forma de onda & 1024 \\
+        Formato de muestra & entero de 16 bits con signo (Q15) \\
+        Dimensión del espacio latente & 2 \\
+        Tamaño de la rejilla & $16 \times 16$ (256 formas de onda) \\
+        Memoria ocupada por la rejilla & 512~kB \\
+        Frecuencia de muestreo de audio & 48~kHz \\
+        Tamaño del bloque de audio & 48 muestras \\
+        Duración de la transición entre tablas & 20~ms \\
+        Periodo de lectura del táctil & 50~ms \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+El tamaño de 1024 muestras merece justificación, porque las ondas del corpus
+tienen 600. Una onda de 600 muestras contiene como mucho 300 armónicos, que es
+el límite de Nyquist del propio ciclo, y 1024 es la menor potencia de dos por
+encima de ese valor. Remuestrear a 1024 recoge entonces todo el contenido
+armónico disponible sin desperdicio, mientras que subir a 2048 duplicaría la
+memoria de la rejilla y el tráfico entre placas para dejar vacíos los armónicos
+que el original no tenía. Que sea potencia de dos aporta además una ventaja
+práctica en la reproducción, ya que el retorno al inicio de la tabla se resuelve
+con una máscara de bits en lugar de con una operación de módulo.
+
+Queda por justificar una ausencia. Como se indicó en el capítulo 2, la
+limitación de banda de las tablas no forma parte de este trabajo. El
+\emph{aliasing} no lo introduce el remuestreo del corpus, que es una operación
+sin pérdida, sino la reproducción de notas agudas, cuando los armónicos altos de
+la tabla superan la frecuencia de Nyquist. Corregirlo exige almacenar varias
+versiones filtradas de cada forma de onda y elegir la adecuada según la nota, lo
+que multiplica por ese número de versiones tanto los 512~kB de la rejilla como
+el tráfico por el bus. Se clasificó desde el principio como refinamiento
+opcional frente al camino crítico, que era la integración de las tres placas, y
+no llegó a abordarse.
+
+\section{Enlaces de comunicación}
+\label{sec:enlaces}
+
+El sistema tiene tres enlaces, resumidos en la Tabla~\ref{tab:enlaces}. Los dos
+primeros comparten el mismo par de hilos en sentidos opuestos, aprovechando que
+el \gls{uart} es bidireccional.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Enlaces de comunicación entre placas.}
+    \label{tab:enlaces}
+    \begin{tabular}{lllrr}
+        \toprule
+        \textbf{Enlace} & \textbf{Medio} & \textbf{Contenido} &
+        \textbf{Trama} & \textbf{Tiempo} \\
+        \midrule
+        CYD $\rightarrow$ ESP32-S3 & UART 460.800 bd & coordenada táctil &
+        6~B & 130~$\mu$s \\
+        ESP32-S3 $\rightarrow$ CYD & UART 460.800 bd & onda para dibujar &
+        260~B & 5,6~ms \\
+        ESP32-S3 $\rightarrow$ Daisy & SPI 10~MHz & forma de onda &
+        2054~B & 1,6~ms \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+La elección del medio para el enlace principal viene dada por el volumen. Enviar
+1024 muestras de 16 bits por \gls{uart}, incluso a 921.600 baudios, llevaría
+unos 22~ms, tiempo suficiente para que el gesto del dedo se note retrasado. El
+mismo envío por \gls{spi} a 10~MHz ocupa menos de 2~ms, y el bus admite subir el
+reloj si en algún momento hiciera falta más margen. Para la coordenada táctil,
+en cambio, el \gls{uart} sobra, porque son seis bytes y no compite con nada.
+
+Las tres tramas comparten criterio de construcción. Todas empiezan por una
+cabecera de sincronización conocida, que permite al receptor reengancharse si
+pierde el hilo, y las de mayor tamaño llevan además un número de secuencia, útil
+para correlacionar lo enviado con lo recibido durante la validación. La
+comprobación de integridad se dimensiona según lo que hay en juego. Una
+suma de comprobación por XOR de los bytes de datos basta en los enlaces cortos,
+mientras que la forma de onda viaja protegida por un \gls{crc} de 16 bits. El
+criterio ante un fallo es el mismo en los tres casos, descartar la trama y
+conservar el último dato válido. En el enlace de audio eso significa que el
+instrumento sigue sonando con la tabla anterior en lugar de reproducir muestras
+corrompidas, que es justamente el comportamiento que exigía el requisito de
+integridad del apartado~\ref{sec:requisitos}.
+
+El canal de vuelta hacia la pantalla merece una nota. Transporta la onda
+reducida a 256 muestras de 8 bits, no la tabla completa, porque su destino es
+una representación gráfica de 320 píxeles de ancho y no la síntesis. Enviar los
+2048 bytes originales a esa velocidad ocuparía unos 45~ms por onda, imposible de
+seguir con el dedo en movimiento, mientras que los 260 bytes de la trama
+reducida se transmiten en algo más de cinco milisegundos. La reducción se hace
+promediando grupos de cuatro muestras consecutivas antes de diezmar, para que
+las ondas con mucho contenido armónico no se dibujen con artefactos y la figura
+de la pantalla se corresponda con lo que suena.
