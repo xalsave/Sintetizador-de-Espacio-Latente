@@ -1,0 +1,72 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\begin{tikzpicture}[overlay,remember picture]
+\fill[fill=white] (current page.south west) rectangle ($(current page.south east)+(0,4cm)$);
+%\node at (current page.center) {\includegraphics[]{portadanueva.pdf}};
+\node at ($(current page.north)+(-6.37cm,-1.8cm)$) {\includegraphics[scale=0.495]{marca_UPV_principal_negro.pdf}};
+%\node at ($(current page.north)+(6.4cm,-1.7cm)$) {\includegraphics[trim=3.05cm 10.8cm 20.3cm 8cm,clip,width=0.225\textwidth]{2018_TELECOMVLC.pdf}};
+\node at ($(current page.north)+(6.7cm,-1.77cm)$) {{\includegraphics[trim=11.8cm 10.8cm 11.5cm 8.05cm,clip,width=0.233\textwidth]{2018_TELECOMVLC.pdf}}};
+\node[anchor=center] at ($(current page.center)!0.35!(current page.north)+(0cm,0)$) (titulo){\begin{minipage}{1.05\textwidth}\begin{center}\Large\textbf{\uppercase{\titulo}}\end{center}\end{minipage}};
+
+\node[anchor=north west] at  ($(current page.center)+(-1.45cm,-5.6cm)$) (){\parbox{0.59\textwidth}{%
+\tolerance=1%
+\emergencystretch=\maxdimen%
+\hyphenpenalty=10000%
+\hbadness=10000%
+\normalsize\rmfamily Trabajo Fin de Grado presentado en la Escuela Técnica 
+Superior  de  Ingeniería  de  Telecomunicación  de  la 
+Universitat  Politècnica  de  València, para  la  obtención 
+del Título de Graduado en Ingeniería de Tecnologías y 
+Servicios de Telecomunicación\\
+\ \\
+Curso \curso\\
+\ \\
+València, \fecha}};
+\node[anchor=center] at ($(current page.center)+(0cm,-0.8cm)$) (tutor){\bfseries Tutor: \tutorA};
+\node[anchor=center] at ($(current page.center)+(0cm,-1.55cm)$) {\bfseries \ifthenelse{\equal{\tutorB}{}}{}{Cotutor: \tutorB}};
+%\node[anchor=west] at ($(current page.west)+(2.5cm,-2.5cm)$) {\bfseries Tutor de empresa: Nombre y apellidos del tutor en la empresa (en su caso)};
+\node[coordinate] at ($(titulo.south)!(tutor.north)!(titulo.south)$) (tutornorte){}; %altura de tutor pero centrado
+\node at ($(titulo.south)!0.54!(tutornorte)$) (){\begin{minipage}{\textwidth}\begin{center}\large\textbf{\autor}\end{center}\end{minipage}};
+%%%%%%%%%%%%
+\node[opacity=1,anchor=south west,scale=0.9] at ($(current page.south west)+(1.9,1.825)$){{\parbox{0.75\textwidth}{%
+\scriptsize{\fontfamily{phv}\selectfont
+Escuela Técnica Superior de Ingeniería de Telecomunicación\\[0.5mm]
+Universitat Politècnica de València\\[0.5mm]
+Edificio 4D. Camino de Vera, s/n, 46022 Valencia\\[0.5mm]
+Tel. +34 96 387 71 90, ext. 77190\\[1.25mm]
+\resizebox{3.15cm}{2.5mm}{\arialbold \href{http://www.etsit.upv.es}{www.etsit.upv.es}}}}}};
+\node[opacity=1,anchor=south east] at ($(current page.south east)+(-2,1.34)$) (){\includegraphics[scale=0.16]{logos.png}};
+\end{tikzpicture}
+
+
+% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% \begin{tikzpicture}[overlay,remember picture]
+% %\node at (current page.center) {\includegraphics[]{TFG_portada.pdf}};
+% %\fill[fill=white] (current page.south west) rectangle ($(current page.south east)+(0,4cm)$);
+% \node at ($(current page.north)+(-6.36cm,-1.8cm)$) {\includegraphics[scale=0.45]{marca_UPV_principal_negro.pdf}};
+% %\node at ($(current page.north)+(6.4cm,-1.7cm)$) {\includegraphics[trim=3.05cm 10.8cm 20.3cm 8cm,clip,width=0.225\textwidth]{2018_TELECOMVLC.pdf}};
+% \node at ($(current page.north)+(6.75cm,-1.77cm)$) {{\includegraphics[trim=11.8cm 10.8cm 11.5cm 8.05cm,clip,width=0.233\textwidth]{2018_TELECOMVLC.pdf}}};
+% \node[anchor=center] at ($(current page.center)!0.36!(current page.north)+(0cm,0)$) (titulo){\begin{minipage}{1.05\textwidth}\begin{center}\Large\textbf{\uppercase{\titulo}}\end{center}\end{minipage}};
+
+% \node[anchor=north west] at  ($(current page.center)+(-1.45cm,-5.5cm)$) (){\parbox{0.59\textwidth}{%
+% \tolerance=1%
+% \emergencystretch=\maxdimen%
+% \hyphenpenalty=10000%
+% \hbadness=10000%
+% \normalsize\rmfamily Trabajo Fin de Grado presentado en la Escuela Técnica 
+% Superior  de  Ingenieros  de  Telecomunicación  de  la 
+% Universitat  Politècnica  de  València, para  la  obtención 
+% del Título de Graduado en Ingeniería de Tecnologías y 
+% Servicios de Telecomunicación\\
+% \ \\
+% Curso \curso\\
+% \ \\
+% Valencia, \fecha}};
+% \node[anchor=center] at ($(current page.center)+(0cm,-0.6cm)$) (tutor){\bfseries Tutor: \tutorA};
+% \node[anchor=center] at ($(current page.center)+(0cm,-1.55cm)$) {\bfseries \ifthenelse{\equal{\tutorB}{}}{}{Cotutor: \tutorB}};
+% %\node[anchor=west] at ($(current page.west)+(2.5cm,-2.5cm)$) {\bfseries Tutor de empresa: Nombre y apellidos del tutor en la empresa (en su caso)};
+% \node[coordinate] at ($(titulo.south)!(tutor.north)!(titulo.south)$) (tutornorte){}; %altura de tutor pero centrado
+% \node at ($(titulo.south)!0.54!(tutornorte)$) (){\begin{minipage}{\textwidth}\begin{center}\large\textbf{\autor}\end{center}\end{minipage}};
+% \end{tikzpicture}

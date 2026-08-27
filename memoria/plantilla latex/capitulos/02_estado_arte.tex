@@ -1,0 +1,351 @@
+\chapter{Marco teórico y estado del arte}
+
+Este capítulo reúne los conceptos necesarios para seguir el resto del documento.
+Se parte de los fundamentos de la síntesis de sonido, se detalla la técnica
+concreta sobre la que se construye el instrumento y se introducen los
+autoencoders y la noción de espacio latente. El capítulo termina con una
+revisión de los trabajos previos que aplican redes neuronales a la generación de
+formas de onda, que es donde se sitúa la aportación de este trabajo.
+
+\section{Fundamentos de síntesis de sonido}
+
+Un sonido periódico queda descrito por tres magnitudes: la frecuencia
+fundamental, que determina la altura de la nota; la amplitud, que determina su
+intensidad; y el contenido armónico, que determina el timbre. Dos instrumentos
+que tocan la misma nota con la misma intensidad se distinguen precisamente por
+la distribución de energía entre los armónicos de esa fundamental. Estos armónicos
+dependen de características físicas del instrumento, como la forma de la caja de resonancia
+o la rigidez de las cuerdas. En la sintetización de sonido, en cambio, el timbre 
+se genera mediante algoritmos que producen la señal de audio directamente, sin 
+necesidad de un instrumento físico. 
+
+La síntesis de sonido agrupa las técnicas que permiten generar señales de audio
+por medios electrónicos. Las más habituales son las siguientes
+\cite{Wilson2013}:
+
+\begin{itemize}
+    \item \textbf{Síntesis aditiva.} Construye el sonido sumando osciladores
+          senoidales de distinta frecuencia y amplitud. Ofrece un control muy
+          preciso del espectro, a costa de un coste computacional elevado
+          cuando el número de frecuencias a sumar es alto.
+    \item \textbf{Síntesis sustractiva.} Parte de una señal rica en armónicos y
+          emplea filtros para eliminar las frecuencias no deseadas. Es la base
+          de los sintetizadores analógicos clásicos y sigue vigente en los
+          digitales.
+    \item \textbf{Síntesis por modulación de frecuencia.} Modula la frecuencia
+          de un oscilador con la salida de otro, generando espectros complejos
+          con muy pocos operadores.
+    \item \textbf{Síntesis por tabla de ondas.} Almacena en memoria uno o varios
+          ciclos de forma de onda y los reproduce leyendo la tabla a la
+          velocidad adecuada. Es la técnica sobre la que se construye este
+          trabajo y se detalla en el apartado siguiente.
+\end{itemize}
+
+Con independencia de la técnica empleada, un sonido musical necesita evolucionar
+en el tiempo. Una nota que se mantuviese con amplitud constante desde que se
+pulsa la tecla hasta que se suelta resultaría artificial. Esa evolución se
+controla mediante una envolvente, y la más extendida es la \gls{adsr}, que
+divide la vida de la nota en cuatro tramos:
+\begin{itemize}
+      \item \textbf{Ataque (Attack).} El tiempo que tarda la señal en alcanzar su nivel máximo.
+      \item \textbf{Decaimiento (Decay).} El tiempo que tarda en descender el nivel desde el pico máximo hasta el nivel de sostenimiento.
+      \item \textbf{Sostenimiento (Sustain).} El nivel que se mantiene mientras la tecla siga pulsada.
+      \item \textbf{Liberación (Release).} El tiempo que tarda en devolver la señal a cero cuando se suelta la tecla.
+  \end{itemize}
+
+La Figura~\ref{fig:adsr} muestra la forma que adopta la envolvente y cómo se
+reparten esos cuatro tramos a lo largo de la duración de la nota.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.85\textwidth]{adsr.pdf}
+    \caption{Envolvente ADSR. Los tres primeros tramos dependen de cuánto tiempo
+             se mantenga pulsada la tecla; la liberación empieza al soltarla.}
+    \label{fig:adsr}
+\end{figure}
+
+El otro elemento habitual en la cadena de un sintetizador es el filtro. Un
+\gls{lpf} atenúa las frecuencias por encima de una frecuencia de corte, un
+\gls{hpf} hace lo contrario, atenúa las frecuencias por debajo de una frecuencia
+de corte; y un \gls{bpf} deja pasar únicamente una banda de frecuencia
+intermedia. El parámetro de resonancia (Q) realza la respuesta en torno a la
+frecuencia de corte, lo que da al filtro buena parte de su carácter sonoro. 
+
+La Figura~\ref{fig:filtros} compara la respuesta en magnitud de los tres tipos
+sobre una misma frecuencia de corte.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.85\textwidth]{filtros.pdf}
+    \caption{Respuesta en magnitud de un filtro paso bajo, uno paso alto y uno
+             paso banda de segundo orden, todos con la frecuencia de corte en
+             1~kHz y factor de calidad $Q = 0{,}707$.}
+    \label{fig:filtros}
+\end{figure}
+
+El orden clásico de la cadena en un sintetizador sustractivo es oscilador, filtro y
+amplificador controlado por la envolvente (\gls{adsr}), y es el que se ha mantenido en este
+trabajo.
+
+\section{Síntesis por tabla de ondas}
+
+La síntesis wavetable se apoya en una observación sencilla. Si una señal es
+periódica, basta con almacenar un único ciclo y repetirlo. En lugar de evaluar
+una función trigonométrica para cada muestra, se guarda ese ciclo en una tabla
+de $N$ posiciones y se recorre cíclicamente a la velocidad que corresponda a la
+nota deseada \cite{BristowJohnson1996}.
+
+El mecanismo que gobierna esa lectura es el acumulador de fase. Se trata de una
+variable que avanza una cantidad fija en cada muestra y que vuelve al principio
+al llegar al final de la tabla. Siendo $f_0$ la frecuencia de la nota, $f_s$ la
+frecuencia de muestreo y $N$ el tamaño de la tabla, el incremento de fase por
+muestra es el de la Ecuación~\eqref{eq:incfase}.
+
+\begin{equation}
+\label{eq:incfase}
+\Delta\varphi = \frac{f_0 \cdot N}{f_s}
+\end{equation}
+
+El acumulador avanza según la Ecuación~\eqref{eq:acumulador}, donde el módulo
+implementa el retorno al inicio de la tabla al completarse cada ciclo.
+
+\begin{equation}
+\label{eq:acumulador}
+\varphi[n+1] = \left( \varphi[n] + \Delta\varphi \right) \bmod N
+\end{equation}
+
+Como $\Delta\varphi$ no es en general un número entero, el acumulador apunta
+casi siempre a una posición intermedia entre dos muestras de la tabla. La
+solución habitual es interpolar linealmente entre la muestra anterior y la
+siguiente, tal como recoge la Ecuación~\eqref{eq:interplineal}, donde
+$i = \lfloor \varphi \rfloor$ y $\alpha = \varphi - i$ es la parte fraccionaria.
+
+\begin{equation}
+\label{eq:interplineal}
+s[n] = (1-\alpha) \cdot T[i] + \alpha \cdot T[(i+1) \bmod N]
+\end{equation}
+
+La Figura~\ref{fig:wavetable} ilustra el proceso completo. El acumulador señala
+una posición fraccionaria dentro de la tabla y el valor de salida se obtiene
+pesando las dos muestras que lo rodean.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=\textwidth]{wavetable.pdf}
+    \caption{Lectura de una tabla de ondas. A la izquierda, la tabla almacenada y
+             la posición actual del acumulador de fase $\varphi$. A la derecha,
+             el detalle de la interpolación lineal entre las dos muestras
+             vecinas.}
+    \label{fig:wavetable}
+\end{figure}
+
+El coste de generar una muestra se reduce así a una suma, dos multiplicaciones y
+un acceso a memoria, lo que hace la técnica especialmente adecuada para
+microcontroladores. Bristow-Johnson señala además que, para tonos musicales
+cuasiperiódicos, este método resulta equivalente a la síntesis aditiva pero
+exigiendo mucho menos cálculo en tiempo real \cite{BristowJohnson1996}, que es
+justo el compromiso que interesa en un sistema embebido. A cambio, el timbre
+queda fijado por el contenido de la tabla, de modo que cambiar de sonido implica
+cambiar de tabla.
+
+\subsection{Aliasing y limitación de banda}
+
+Una tabla de $N$ muestras puede contener hasta $N/2$ armónicos. Al reproducirla
+a frecuencias altas, los armónicos superiores acaban rebasando la frecuencia de
+Nyquist y se reflejan hacia el interior del espectro como componentes de
+frecuencia no armónica, audibles como un timbre metálico y desafinado. Este
+fenómeno se conoce como \emph{aliasing} y es el principal problema de la
+reproducción de tablas a frecuencias elevadas.
+
+La solución habitual consiste en almacenar varias versiones de cada tabla,
+filtradas para distintos rangos de nota, y seleccionar en cada momento la que
+corresponda al tono que se está tocando \cite{Valimaki2007}. Conviene señalar
+que este problema es independiente del tamaño de la tabla y del proceso de
+remuestreo empleado para construirla. Aumentar $N$ no elimina el
+\emph{aliasing}, solo cambia cuántos armónicos hay disponibles para reflejarse.
+Por las razones que se exponen en el capítulo~\ref{cap:diseno}, la limitación de
+banda queda fuera del alcance de este trabajo.
+
+\section{Autoencoders y espacio latente}
+
+Un autoencoder es una red neuronal entrenada para reproducir su propia entrada.
+Está formado por dos bloques. El codificador transforma la entrada en una
+representación de dimensión mucho menor, y el decodificador intenta reconstruir
+la entrada original a partir de esa representación. La representación intermedia
+recibe el nombre de código o vector latente, y el espacio en el que vive, espacio
+latente.
+
+El interés de esta arquitectura no está en la reconstrucción en sí, que sería
+trivial si no se impusiera ninguna restricción, sino en el cuello de botella. Al
+obligar a que toda la información pase por un número reducido de valores, la red
+se ve forzada a descartar lo accesorio y quedarse con los rasgos que de verdad
+distinguen unas entradas de otras. Aplicado a un conjunto de formas de onda, el
+codificador acaba situando cerca las que comparten características espectrales,
+sin que se le haya indicado en ningún momento qué es un armónico.
+
+\subsection{El autoencoder variacional}
+
+Un autoencoder convencional organiza el espacio latente sin ninguna garantía
+sobre su estructura. Nada impide que queden zonas vacías entre los puntos
+ocupados, y un punto tomado de una de esas zonas puede decodificarse en algo sin
+sentido. Para el uso que se pretende aquí, en el que el usuario recorre el plano
+con el dedo y pasa continuamente por posiciones que no corresponden a ninguna
+onda del conjunto de entrenamiento, esa falta de garantías es un problema.
+
+El autoencoder variacional o \gls{vae} \cite{Kingma2013} resuelve esa limitación
+cambiando la naturaleza del código. En lugar de producir un vector de valores
+concretos, el codificador produce los parámetros de una distribución de
+probabilidad, es decir, un vector de medias $\boldsymbol{\mu}$ y otro de
+varianzas $\boldsymbol{\sigma}^2$. El código que recibe el decodificador se
+obtiene muestreando esa distribución. Ese muestreo plantea un problema, porque
+una operación aleatoria no es derivable y el gradiente no puede atravesarla
+durante el entrenamiento. La solución que proponen Kingma y Welling es
+reescribir la variable latente como una transformación determinista de la media
+y la desviación típica sobre una muestra de ruido tomada aparte, tal como recoge
+la Ecuación~\eqref{eq:reparam}. Con esa reformulación, conocida como truco de
+reparametrización, la aleatoriedad queda confinada en un término que no depende
+de los parámetros de la red, y el gradiente sí puede propagarse.
+
+\begin{equation}
+\label{eq:reparam}
+\mathbf{z} = \boldsymbol{\mu} + \boldsymbol{\sigma} \odot \boldsymbol{\epsilon},
+\qquad \boldsymbol{\epsilon} \sim \mathcal{N}(\mathbf{0}, \mathbf{I})
+\end{equation}
+
+A la función de pérdida se le añade además un segundo término que penaliza la
+divergencia de Kullback-Leibler entre la distribución producida por el
+codificador y una normal estándar. Ese término tira de todas las
+distribuciones hacia el mismo punto del espacio, con lo que las zonas ocupadas
+se solapan y no quedan huecos. La pérdida total combina entonces el error de
+reconstrucción y esa divergencia, como indica la Ecuación~\eqref{eq:vaeloss}.
+
+\begin{equation}
+\label{eq:vaeloss}
+\mathcal{L} = \underbrace{\mathrm{MSE}(\mathbf{x}, \hat{\mathbf{x}})}_{\text{reconstrucción}}
++ \; \beta \cdot \underbrace{D_{KL}\!\left( q(\mathbf{z}|\mathbf{x}) \,\|\, \mathcal{N}(\mathbf{0},\mathbf{I}) \right)}_{\text{regularización}}
+\end{equation}
+
+Para un latente de $d$ dimensiones, la divergencia admite la forma cerrada de la
+Ecuación~\eqref{eq:kl}, que es la que se implementa en la práctica.
+
+\begin{equation}
+\label{eq:kl}
+D_{KL} = -\frac{1}{2} \sum_{j=1}^{d} \left( 1 + \log \sigma_j^2 - \mu_j^2 - \sigma_j^2 \right)
+\end{equation}
+
+El factor $\beta$ que aparece en la Ecuación~\eqref{eq:vaeloss} pondera la
+importancia relativa de los dos términos y da nombre a la variante conocida como
+$\beta$-VAE \cite{Higgins2017}. Higgins y sus coautores lo introducen como un
+hiperparámetro que regula el equilibrio entre la capacidad del canal latente y
+la precisión de la reconstrucción, y observan que valores mayores que la unidad
+empujan al modelo hacia representaciones más ordenadas a costa de reconstruir
+peor. Su ajuste supone entonces un compromiso. Valores altos producen un espacio
+latente muy regular pero reconstrucciones pobres, porque el modelo prioriza
+acercar todas las distribuciones a la normal estándar sobre reproducir fielmente
+cada entrada. Valores bajos mejoran la reconstrucción a costa de un espacio
+menos continuo.
+
+Existe además un caso degenerado, conocido como colapso posterior, en el que el
+modelo opta por ignorar el latente por completo y el término de divergencia se
+anula. Bowman y sus coautores se encontraron con este comportamiento al aplicar
+un autoencoder variacional a texto, y lo resolvieron introduciendo el peso de la
+divergencia de forma progresiva. Durante las primeras épocas el término se anula
+o se mantiene muy bajo, de modo que el modelo se centra en aprender a
+reconstruir, y solo después se sube hasta su valor definitivo
+\cite{Bowman2016}. Es la misma técnica que se ha empleado en este trabajo, tal
+como se detalla en el capítulo~\ref{cap:ml}.
+
+\section{Estado del arte}
+
+La aplicación de redes neuronales a la síntesis de audio ha producido en los
+últimos años varias líneas de trabajo. Interesa aquí distinguir dos enfoques
+distintos según qué es lo que la red genera.
+
+\subsection{Modelos que generan la señal de audio}
+
+Un primer grupo de trabajos emplea la red para generar directamente la forma de
+onda de salida, muestra a muestra. El sistema DDSP \cite{Engel2020} combina
+elementos clásicos de procesado de señal, como osciladores armónicos y filtros,
+con redes neuronales que controlan sus parámetros, de modo que el conocimiento
+sobre cómo se genera el sonido queda incorporado a la arquitectura en lugar de
+tener que aprenderse desde cero. RAVE \cite{Caillon2021} sigue una vía
+diferente. Se trata de un autoencoder variacional entrenado sobre audio en
+bruto, con un procedimiento de entrenamiento en dos fases, primero de
+aprendizaje de la representación y después de ajuste adversario. Caillon y
+Esling añaden un análisis posterior del espacio latente que permite decidir el
+compromiso entre fidelidad de reconstrucción y compacidad de la representación,
+un problema que aparece de nuevo en este trabajo al fijar la dimensión del
+latente. Su interés para este trabajo es que demuestra
+que la síntesis neuronal puede alcanzar velocidades de tiempo real, aunque sobre
+hardware sensiblemente más potente que un microcontrolador.
+
+\subsection{Modelos que generan tablas de onda}
+
+El segundo grupo, más cercano a lo que se plantea aquí, no genera audio sino
+tablas. La red produce una forma de onda de un ciclo que después se reproduce
+mediante un oscilador convencional, con lo que el coste de la inferencia queda
+desacoplado de la frecuencia de muestreo.
+
+El trabajo de Hantrakul y Yang \cite{Hantrakul2018} es el precedente más
+directo. Reutilizan el modelo NSynth WaveNet ya entrenado como autoencoder de
+tablas, generando formas de onda de 512 muestras e interpolando entre ellas en
+el espacio latente. El resultado se distribuye como \emph{plugin} VST/AU para
+estación de trabajo de audio digital.
+
+Dos observaciones suyas resultan especialmente pertinentes aquí. La primera es
+de coste. Los propios autores miden unos 4 segundos para codificar y unos 7 para
+decodificar una única forma de onda sobre una máquina con GPU, lo que descarta
+por completo ejecutar la red durante la reproducción. Su solución fue generar
+por adelantado 300 tablas interpolando entre combinaciones de seno, sierra y
+triangular, y reproducirlas después con un oscilador convencional. Es exactamente
+la misma estrategia que se adopta en este trabajo, y conviene subrayar que allí
+la limitación aparece ya sobre una GPU de sobremesa, no sobre un
+microcontrolador.
+
+La segunda observación tiene que ver con la estructura del espacio latente.
+Hantrakul y Yang comprueban que interpolar a lo largo del segmento que une dos
+vectores del espacio produce mezclas utilizables de las dos ondas de partida,
+pero que apartarse de ese segmento genera ruido. Dicho de otro modo, en su
+modelo no todo el espacio latente es válido, solo lo son las trayectorias entre
+puntos conocidos. Para un instrumento en el que el usuario recorre libremente un
+plano con el dedo esa garantía no basta, y es una de las razones que justifican
+emplear aquí un autoencoder variacional en lugar de uno convencional. Los
+propios autores apuntan en esa dirección al plantear como trabajo futuro un
+modelo ligero basado precisamente en un autoencoder variacional.
+
+Kreković \cite{Krekovic2021} plantea un oscilador basado en un autoencoder y
+estudia el efecto del conjunto de entrenamiento y de los hiperparámetros sobre
+la variedad de las formas de onda generadas. Su aportación más pertinente aquí
+es la constatación de que emplear las variables latentes directamente como
+parámetros de entrada produce una transición suave entre las ondas generadas
+cuando los cambios de esos parámetros son pequeños. Es exactamente la propiedad
+sobre la que descansa el control táctil de este instrumento.
+
+Más recientemente, Wavespace \cite{Lee2024} propone un generador de tablas
+basado en un autoencoder variacional cuyo espacio latente se factoriza por
+completo en subespacios asociados a distintos estilos de forma de onda. El
+generador se condiciona además con descriptores tímbricos y morfológicos, de
+modo que el usuario puede manipular cada subespacio de forma independiente en
+lugar de moverse por un plano indiferenciado. Los autores lo prototipan también
+como \emph{plugin} de oscilador para estación de trabajo de audio digital, y
+señalan que la restricción de velocidad de cálculo sigue siendo el principal
+obstáculo cuando se pretende decodificar una forma de onda para cada bloque de
+audio.
+
+\subsection{Posicionamiento de este trabajo}
+
+De la revisión anterior se desprende que la generación de tablas de onda
+mediante autoencoders y su interpolación en el espacio latente es un problema ya
+abordado, y resuelto con solvencia, en varios trabajos previos. La aportación de
+este trabajo no está, por tanto, en el modelo.
+
+Lo que ninguno de esos trabajos aborda es la materialización del concepto como
+instrumento físico independiente. Todos ellos se presentan como
+\emph{plugins}, aplicaciones de escritorio o prototipos de investigación que se
+ejecutan sobre un ordenador. La aportación diferencial que se persigue aquí es
+la integración embebida completa. Eso supone repartir el sistema entre
+microcontroladores de bajo coste, resolver la comunicación entre ellos, mantener
+la estabilidad del audio en tiempo real y construir un dispositivo autónomo con
+control táctil y entrada \gls{midi} que no necesite un ordenador para funcionar.
+El reto no es de aprendizaje automático, sino de ingeniería de sistemas
+embebidos.

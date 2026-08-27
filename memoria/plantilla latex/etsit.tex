@@ -1,0 +1,132 @@
+%Directrices TFG ETSIT
+
+\chapter{Objetivo de este documento}
+El objetivo de este documento es proporcionar unas directrices generales y un manual de estilo para la realización de la memoria del Trabajo Fin de Grado.
+\chapter{Formato de la memoria}
+\section{Idioma}
+La memoria se podrá escribir en castellano, valenciano o inglés.
+\section{Tipo de letra}
+Se usará la fuente Times New Roman o una similar, con un tamaño tamaño mínimo de 11 puntos para el texto principal y 9 puntos para los pies de figura/tabla y las notas al pie de página.
+
+\section{Estructura}
+\subsection{Párrafos}
+La memoria se escribirá en párrafos justificados a izquierda y derecha. 
+
+La separación mínima entre párrafos  será de 6 ptos.
+\subsection{Capítulos, secciones y subsecciones}
+Los capítulos irán numerados y el texto se estructurará en secciones y subsecciones adecuadamente numeradas.  
+\section{Figuras, tablas y ecuaciones}
+Las figuras y las tablas tendrán su correspondiente numeración y texto descriptivo al pie. Las tablas tendrán una numeración independiente de la de las figuras.  Las ecuaciones que se muestren en una línea independiente del texto también irán numeradas. Tanto las figuras, ecuaciones y tablas deben estar adecuadamente citadas en el texto. Además, las primeras referencias a las figuras y tablas deben estar en orden numérico (por ejemplo, en el texto no puede aparecer una referencia a la figura~\ref{fig:PLL} antes de que haya aparecido la primera referencia a la figura~\ref{fig:penguins}). 
+
+\textcolor{red}{ADVERTENCIA}: Para utilizar imágenes de las que no se es autor (por ejemplo, las obtenidas de libros, publicaciones periódicas o páginas web) es necesario contar con la licencia correspondiente. Por tanto, salvo que las imágenes utilizadas estén sujetas a una licencia CC0 o CC BY, para su reproducción será necesario disponer de la licencia de uso emitida por el titular de los derechos de autor y adjuntarla como anexo a la memoria. El autor del TFG/M es responsable de las consecuencias que puedan derivarse del uso de imágenes sin la licencia correspondiente.
+
+La figuras~\ref{fig:penguins} y \ref{fig:PLL} son ejemplos de figuras. 
+
+\begin{figure}
+    \centering
+    \includegraphics[width=0.4\textwidth]{figura1.pdf}
+    \caption{Ejemplo de figura}
+    \label{fig:penguins}
+\end{figure} 
+%
+\begin{figure}
+    \centering
+\resizebox{\textwidth}{!}{\begin{tikzpicture}[ultra thick,black,opacity=1]
+\tikzset{bloque/.style={draw=black, rectangle,draw=blue, fill=lightgray!20, rounded corners,minimum width=2cm,minimum height=1cm,ultra thick}}
+\node[bloque] at (0,0) (PC){\shortstack{Phase\\comparator}};
+\node[bloque] at (3,0) (LF){\shortstack{Loop\\filter}};
+\node[bloque] at (6,0) (VCO){\shortstack{VCO}};
+\node[circle,fill=black,draw=black,inner sep=0.5mm] at ($(VCO.east)+(0.5cm,0)$) (nodo){};
+\draw[latex-] (PC.west) -- +(-1,0) node[pos=1,anchor=east](){$V_i$};
+\draw[-latex] (VCO.east) -- +(1,0) node[pos=1,anchor=west](){$V_o$};
+\draw[-latex] (nodo) -- +(0,-1)  -| (PC);
+\draw[-latex] (PC) -- (LF);
+\draw[-latex] (LF) -- (VCO);
+\end{tikzpicture}}
+\caption{Otro ejemplo de figura}
+    \label{fig:PLL}
+\end{figure} 
+
+Ejemplos de ecuaciones (\ref{eq:etsit1} y \ref{eq:etsit2}):
+\begin{align}
+\mathbb{X}[z]&=\sum_{n=0}^{N-1}x[n]{\cdot}z^{-n}
+=\sum_{n=0}^{\infty} a^{-n}{\cdot}z^{-n}=\nonumber\\
+\label{eq:etsit1}
+&=\frac{1}{1-(a{\cdot}z)^{-1}}=\frac{z}{z{-}a^{-1}}
+\end{align}
+
+\begin{equation}
+\label{eq:etsit2}
+    (1+x)^n=1+\frac{n x}{1!}+\frac{n (n-1)x^2}{2!}+\ldots
+\end{equation}
+
+Y la tabla~\ref{tab:ejemplo2} es un ejemplo de tabla.
+\begin{table}[]
+    \centering
+\begin{tabular}{@{} *5l @{}}    \toprule
+\emph{name} & \emph{foo} &&&  \\\midrule
+Models    & A  & B  & C  & D  \\ 
+ Model $X$ & X1 & X2 & X3 & X4\\ 
+ Model $Y$ & Y1 & Y2 & Y3 & Y4\\\bottomrule
+ \hline
+\end{tabular}
+    \caption{Tabla ejemplo}
+    \label{tab:ejemplo2}
+\end{table}
+
+\begin{table}[]
+    \centering
+\begin{tikzpicture}
+\node[inner sep=0pt,outer sep=0pt] (tbl) {
+\begin{tabularx}{.75\textwidth}{ p{0.15 \textwidth}  p{0.10 \textwidth} p{0.10 \textwidth} p{0.10 \textwidth} p{0.15 \textwidth}  }
+\toprule
+ & Small  &  Medium &  Large & Shape fraction \\
+\midrule
+Compact    & 10\% &  44\% & 7\% & 61\% \\ 
+Flat       & 4\%  &  10\% & 4\% & 18\% \\ 
+Elongated  & 5\%  &  12\% & 4\% & 21\% \\ 
+\midrule 
+Size fraction  & 19\% & 66\% & 15\% & 100\% \\
+\bottomrule
+\end{tabularx}};
+\begin{pgfonlayer}{background}
+\draw[top color=azul!10!white,bottom color=azul!10!white,
+    draw=none] ($(tbl.north west)+(0,0)$)
+    rectangle ($(tbl.north east)+(0,-1.9em)$);
+\draw[fill=white,draw=none] ($(tbl.south west)
+    +(0,0)$) rectangle ($(tbl.north east)+(0,-1.9em)$);
+\end{pgfonlayer}
+\end{tikzpicture}
+    \caption{Otra tabla}
+    \label{tab:tablagris}
+\end{table}
+
+\section{Referencias bibliográficas}
+La memoria debe incluir una relación bibliográfica de las fuentes consultadas. Las referencias bibliográficas siempre deberán estar convenientemente citadas en el texto de la memoria. Se deberá dedicar una sección de la misma para listarlas con la notación mostrada en la sección de Bibliografía de este documento.
+
+Citando una referencia \cite{Smith1997}, otra \cite{Orfanidis1996} y otra \cite{Wyndrum1965}. Y otra más \cite{Dai2010}.
+
+\section{Listado de siglas empleadas}
+
+Para que las siglas empleadas aparezcan en el listado de siglas, al principio del documento, hay que definirlas en ``siglas.tex'' y también usarlas en el documento con el comando \verb+\gls+: \gls{utc} y \gls{adt} se están usando de esa manera.
+
+
+\chapter{Apartados de la memoria}
+
+Las páginas han de estar numeradas, comenzando en la página en la que se inicia el capítulo 1. Se recomienda que la memoria no exceda de una extensión de 75 páginas incluyendo los anexos.
+
+Se recomienda que la memoria incluya los siguientes apartados:
+\begin{itemize}
+\item Portada
+\item Resumen
+\item Índice de la memoria
+\item Introducción
+\item Objetivos
+\item Metodología
+\item Desarrollo y resultados
+\item Pliego de condiciones (en su caso) que puede incluir presupuesto, planos, esquemas técnicos, materiales y equipos, etc. 
+\item Conclusiones y propuesta de trabajo futuro
+\item Bibliografía
+\item Anexos (en su caso).
+\end{itemize}
+

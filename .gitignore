@@ -37,3 +37,28 @@ memoria/plantilla latex.zip
 *.bak
 *.bak[0-9]
 *.bad
+
+# LaTeX: ficheros intermedios de compilacion
+memoria/plantilla latex/*.aux
+memoria/plantilla latex/*.log
+memoria/plantilla latex/*.out
+memoria/plantilla latex/*.toc
+memoria/plantilla latex/*.lof
+memoria/plantilla latex/*.lot
+memoria/plantilla latex/*.bbl
+memoria/plantilla latex/*.bcf
+memoria/plantilla latex/*.blg
+memoria/plantilla latex/*.run.xml
+memoria/plantilla latex/*.glo
+memoria/plantilla latex/*.gls
+memoria/plantilla latex/*.glg
+memoria/plantilla latex/*.ist
+memoria/plantilla latex/*.synctex.gz
+
+# Material de terceros y personal: NO se sube (repo publico)
+memoria/papers/
+memoria/referencias tfg/
+memoria/memorias_antiguas/
+
+# PDF compilado de la memoria: se regenera con build.ps1
+memoria/plantilla latex/main.pdf

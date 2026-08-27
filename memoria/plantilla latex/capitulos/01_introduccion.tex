@@ -1,0 +1,180 @@
+\chapter{Introducción}
+
+\section{Contexto y planteamiento del problema}
+
+La síntesis wavetable es una de las técnicas más extendidas en los instrumentos
+musicales electrónicos actuales. Su principio es sencillo, en lugar de calcular
+la forma de onda muestra a muestra mediante una expresión matemática, se
+almacena un ciclo completo de la onda en una tabla y se recorre esa tabla a la
+velocidad a la que se quiere reproducir la nota . El coste
+computacional es bajo y el control sobre el timbre es directo, ya que basta con
+sustituir el contenido de la tabla para obtener un sonido distinto.
+
+El problema aparece al intentar pasar de un timbre a otro de forma continua. Un
+banco de wavetables es un conjunto discreto, contiene las ondas que contiene y
+nada más. Promediar dos de ellas sin ningún criterio previo no produce un timbre
+intermedio convincente, sino cancelaciones entre armónicos que suenan a filtro
+de peine, porque las dos ondas no comparten una referencia de fase común.
+Tampoco existe una noción evidente de cercanía entre ondas. Dado un banco de
+varios miles de formas de onda no hay una ordenación natural que sitúe juntas
+las que suenan parecido.
+
+Los autoencoders ofrecen una vía para resolver las dos cosas a la vez. Un
+autoencoder es una red neuronal formada por dos mitades: un codificador, que
+comprime cada onda a un número reducido de valores; y un decodificador, que
+reconstruye la onda a partir de esos valores. El conjunto de valores intermedios
+recibe el nombre de espacio latente. Si ese espacio se restringe a dos
+dimensiones, cada onda de un conjunto queda situada en un punto de un plano, y las
+ondas de sonido parecido tienden a agruparse. La variante variacional del
+autoencoder añade una condición adicional sobre la organización de ese plano. Lo
+obliga a ser continuo, sin huecos ni saltos bruscos. La consecuencia
+práctica es que el decodificador puede generar una forma de onda con sentido para
+cualquier punto del plano, incluidos los que no corresponden a ninguna onda del
+conjunto original. Ahí es donde nacen los timbres intermedios que un banco
+discreto no puede proporcionar.
+
+Un plano continuo de dos dimensiones es, además, exactamente lo que un dedo
+puede controlar sobre una pantalla táctil. Esa coincidencia entre la dimensión
+del espacio aprendido y la del gesto de control es la que da sentido al
+instrumento que se plantea en este trabajo.
+
+\section{Motivación y oportunidad}
+
+La idea de generar wavetables mediante redes neuronales no es nueva. Existen
+trabajos previos que aplican autoencoders a la generación e interpolación de
+formas de onda de un ciclo, así como sistemas de síntesis neuronal en tiempo
+real capaces de funcionar sobre hardware de propósito general. Todos ellos, sin
+embargo, comparten un rasgo común: se materializan como aplicaciones de
+escritorio o como complementos para estaciones de trabajo de audio digital. El
+sonido se genera en un ordenador.
+
+La oportunidad que aborda este trabajo es distinta. Se trata de llevar ese mismo
+concepto a un instrumento físico autónomo a microcontroladores
+de bajo coste que generen el audio en su propio hardware y respondan a un gesto
+táctil y a un teclado MIDI sin necesidad de un ordenador conectado. La
+aportación no está, por tanto, en la interpolación neuronal en sí, sino en su
+integración embebida completa en tiempo real. En resolver el reparto de tareas
+entre procesadores, la comunicación entre ellos, la latencia, la estabilidad del
+audio y la construcción del prototipo.
+
+Esa integración impone una restricción que condiciona todo el diseño y que
+conviene enunciar desde el principio: la red neuronal no puede ejecutarse a
+frecuencia de audio. Generar 48.000 muestras por segundo mediante inferencia
+neuronal queda fuera del alcance de un microcontrolador de estas
+características. Ahora bien, la red no necesita trabajar a esa velocidad. Solo
+tiene que producir una forma de onda nueva cuando el usuario mueve el dedo, es
+decir, unas pocas decenas de veces por segundo. La reproducción de esa onda a
+48~kHz es una operación aritmética elemental. Separar la generación de la tabla,
+lenta y esporádica, de su reproducción, rápida y continua, es lo que hace viable
+el sistema completo.
+
+Desde el punto de vista académico, el trabajo integra contenidos de
+procesamiento digital de señal, aprendizaje automático, sistemas embebidos,
+protocolos de comunicación entre dispositivos y diseño electrónico. Es una gran
+oportunidad para poder aplicar muy transversalmente todos los conocimientos
+adquiridos en el grado.
+
+\section{Objetivos}
+
+El objetivo general es diseñar, construir y validar un sintetizador digital
+embebido y autónomo que permita explorar de forma continua un espacio tímbrico
+aprendido por un autoencoder, empleando una pantalla táctil como superficie de
+control y una entrada MIDI estándar para la ejecución musical.
+
+De este objetivo general se derivan los siguientes objetivos específicos:
+
+\begin{itemize}
+    \item Construir un conjunto de datos homogéneo a partir de un conjunto de datos público
+          de formas de onda de un ciclo, resolviendo el remuestreo, la
+          normalización de amplitud y la alineación de fase necesarias para que
+          la interpolación posterior no introduzca artefactos.
+    \item Entrenar un autoencoder variacional que comprima cada forma de onda a
+          una coordenada bidimensional y verificar que el espacio latente
+          resultante es continuo y está bien aprovechado.
+    \item Precalcular, a partir del decodificador entrenado, una rejilla de
+          formas de onda que pueda embarcarse en el sistema y exportarla en un
+          formato adecuado para un microcontrolador.
+    \item Implementar un motor de síntesis wavetable en tiempo real capaz de
+          sustituir la tabla en reproducción sin discontinuidades audibles.
+    \item Resolver la comunicación entre los tres microcontroladores que
+          componen el sistema, definiendo los protocolos y verificando que la
+          información llega íntegra.
+    \item Incorporar el control de nota y dinámica mediante MIDI, así como un
+          panel de control analógico para los parámetros de envolvente y filtro.
+    \item Validar cada etapa de forma objetiva, contrastando el comportamiento
+          del sistema embebido con una implementación de referencia en el
+          ordenador siempre que sea posible.
+    \item Integrar el conjunto en un prototipo físico alimentado desde una
+          fuente única, con su propia electrónica de soporte.
+\end{itemize}
+
+\section{Alcance y condicionantes}
+
+El sistema se construye sobre tres microcontroladores con funciones separadas.
+Una pantalla táctil con controlador ESP32 integrado se encarga de la interfaz de
+usuario. Un ESP32-S3 aloja la rejilla de formas de onda y calcula la
+interpolación. Una placa Daisy Seed, basada en un procesador ARM Cortex-M7,
+genera el audio gracias a su DAC de 24 bits. El teclado que proporciona las notas se conecta por MIDI DIN y
+se considera un elemento externo e intercambiable, de forma que el entregable
+del trabajo es un módulo de sonido y no un instrumento con teclado integrado.
+
+El alcance queda acotado por varios condicionantes que conviene dejar
+explícitos:
+
+\begin{itemize}
+    \item \textbf{La red neuronal no se ejecuta en el instrumento.} El
+          decodificador se emplea fuera de línea, en el ordenador, para generar
+          por adelantado la rejilla de formas de onda que se embarca en el
+          sistema. Durante la ejecución solo hay consulta de tabla e
+          interpolación. Se trata de una estrategia de despliegue, no de una
+          renuncia: es la consecuencia directa de la restricción enunciada en el
+          apartado anterior.
+    \item \textbf{El espacio latente es bidimensional.} Esta elección viene
+          impuesta por el control táctil, pero supone un cuello de botella
+          considerable para representar varios miles de formas de onda
+          distintas. Su efecto sobre la fidelidad de la reconstrucción se mide y
+          se discute en el capítulo de resultados.
+    \item \textbf{El instrumento es monofónico.} La polifonía no forma parte de
+          los objetivos y se plantea únicamente como línea de trabajo futuro.
+    \item \textbf{El hardware es de bajo coste y de disponibilidad comercial.}
+          No se ha diseñado ni fabricado ningún circuito integrado específico, y
+          el montaje final se resuelve sobre placa de tiras de cobre en lugar de
+          sobre un circuito impreso fabricado, por restricciones de plazo.
+    \item \textbf{La amplificación y el altavoz integrados quedan fuera del
+          alcance.} La salida del instrumento es una señal de línea por conector
+          de 3,5~mm. 
+\end{itemize}
+
+\section{Estructura de la memoria}
+
+El presente documento se organiza en nueve capítulos.
+
+El \textbf{capítulo 1} sitúa el problema, expone la motivación del trabajo, fija
+los objetivos y delimita el alcance.
+
+El \textbf{capítulo 2} recoge los fundamentos teóricos necesarios para seguir el
+resto del documento y revisa los trabajos previos relacionados, tanto los
+sistemas de síntesis neuronal publicados.
+
+El \textbf{capítulo 3} describe el diseño del sistema completo: el reparto de
+funciones entre los tres microcontroladores, los protocolos de comunicación
+entre ellos y la separación entre la fase de preparación fuera de línea y la de
+ejecución en tiempo real.
+
+El \textbf{capítulo 4} aborda la parte de aprendizaje automático, desde el
+preprocesado del corpus de formas de onda hasta el entrenamiento del
+autoencoder y la generación de la rejilla que se embarca en el sistema.
+
+Los \textbf{capítulos 5 y 6} describen el desarrollo del firmware. El primero se
+ocupa de la cadena de entrada, formada por la pantalla táctil y el ESP32-S3, y
+el segundo del motor de audio implementado sobre la Daisy Seed.
+
+El \textbf{capítulo 7} trata la parte física del prototipo: la alimentación, el
+panel de control analógico y el montaje definitivo.
+
+El \textbf{capítulo 8} reúne las pruebas realizadas y los resultados obtenidos,
+tanto las medidas eléctricas como las verificaciones numéricas de cada etapa de
+la cadena de procesado.
+
+El \textbf{capítulo 9} recoge las conclusiones y plantea las líneas de trabajo
+futuro.
