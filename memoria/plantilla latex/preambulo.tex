@@ -131,6 +131,20 @@
 %Pie de figura en negrita
 \usepackage[font=footnotesize,labelfont=bf]{caption}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%Colocacion de figuras: los valores por defecto de LaTeX son muy
+%restrictivos y empujan las figuras a paginas posteriores
+\renewcommand{\topfraction}{0.9}
+\renewcommand{\bottomfraction}{0.7}
+\renewcommand{\textfraction}{0.1}
+\renewcommand{\floatpagefraction}{0.75}
+\setcounter{topnumber}{3}
+\setcounter{bottomnumber}{2}
+\setcounter{totalnumber}{4}
+\setlength{\intextsep}{12pt plus 4pt minus 4pt}
+\setlength{\textfloatsep}{14pt plus 4pt minus 4pt}
+%Impide que una figura se cuele en una seccion posterior a la que la cita
+\usepackage[section]{placeins}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %DESCOMENTAR para tener numeración de figuras y tablas 
 %continua en todo el documento
 %\renewcommand\thefigure{\arabic{figure}}

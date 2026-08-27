@@ -9,6 +9,19 @@ if (-not $xelatex) {
 }
 $bin = Split-Path $xelatex
 
+# Si main.pdf esta abierto en un visor, Windows lo bloquea y la compilacion
+# falla al final sin explicar por que
+if (Test-Path "main.pdf") {
+    try {
+        $fs = [System.IO.File]::Open((Resolve-Path "main.pdf"), 'Open', 'Write')
+        $fs.Close()
+    } catch {
+        Write-Host "main.pdf esta abierto en otro programa (visor de PDF, pestana del navegador...)." -ForegroundColor Red
+        Write-Host "Cierralo y vuelve a ejecutar: LaTeX no puede sobrescribirlo." -ForegroundColor Red
+        exit 1
+    }
+}
+
 Write-Host "== xelatex (1/3) ==" -ForegroundColor Cyan
 & $xelatex -interaction=nonstopmode main.tex | Out-Null
 

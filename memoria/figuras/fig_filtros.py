@@ -39,7 +39,7 @@ def respuesta(b, a, f, fs):
 
 f = np.logspace(np.log10(20), np.log10(20000), 800)
 
-fig, ax = plt.subplots(figsize=(5.4, 2.7))
+fig, ax = plt.subplots(figsize=(5.6, 2.4))
 
 for tipo, color, etiqueta in [("lp", AZUL, "Paso bajo"),
                               ("hp", NARANJA, "Paso alto"),
@@ -59,7 +59,7 @@ ax.set_xlabel("Frecuencia (Hz)")
 ax.set_ylabel("Magnitud (dB)")
 ax.set_xticks([20, 100, 1000, 10000, 20000])
 ax.set_xticklabels(["20", "100", "1k", "10k", "20k"])
-ax.legend(loc="lower center", ncol=3, bbox_to_anchor=(0.5, -0.42))
+ax.legend(loc="lower left", ncol=1, bbox_to_anchor=(0.015, 0.02))
 for lado in ("top", "right"):
     ax.spines[lado].set_visible(False)
 

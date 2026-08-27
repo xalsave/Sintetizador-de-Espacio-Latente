@@ -3,7 +3,7 @@
 Este capítulo reúne los conceptos necesarios para seguir el resto del documento.
 Se parte de los fundamentos de la síntesis de sonido, se detalla la técnica
 concreta sobre la que se construye el instrumento y se introducen los
-autoencoders y la noción de espacio latente. El capítulo termina con una
+autoencoders y el espacio latente. El capítulo termina con una
 revisión de los trabajos previos que aplican redes neuronales a la generación de
 formas de onda, que es donde se sitúa la aportación de este trabajo.
 
@@ -168,12 +168,13 @@ banda queda fuera del alcance de este trabajo.
 
 \section{Autoencoders y espacio latente}
 
-Un autoencoder es una red neuronal entrenada para reproducir su propia entrada.
-Está formado por dos bloques. El codificador transforma la entrada en una
-representación de dimensión mucho menor, y el decodificador intenta reconstruir
-la entrada original a partir de esa representación. La representación intermedia
-recibe el nombre de código o vector latente, y el espacio en el que vive, espacio
-latente.
+Un autoencoder es una red neuronal entrenada para intentar reconstruir su propia entrada.
+Está formado por dos bloques. El codificador, que transforma la entrada en una
+representación de dimensión mucho menor; y el decodificador, que intenta reconstruir
+la entrada original a partir de esa representación reducida. La representación intermedia
+recibe el nombre de código o vector latente. Los autoencoders son capaces de organizar estos
+vectores latentes en base a las características de los datos de entrada, de modo que entradas similares acaban
+situadas cerca unas de otras en un espacio. Es lo denominado el espacio latente. 
 
 El interés de esta arquitectura no está en la reconstrucción en sí, que sería
 trivial si no se impusiera ninguna restricción, sino en el cuello de botella. Al
