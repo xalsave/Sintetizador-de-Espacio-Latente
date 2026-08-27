@@ -1,2 +1,425 @@
 \chapter{Modelo neuronal}
 \label{cap:ml}
+
+Este capítulo recorre la fase de preparación descrita en el
+apartado~\ref{sec:fases}, la única del sistema en la que interviene una red
+neuronal. Se parte de un conjunto público de formas de onda de un ciclo, se
+homogeneiza, se entrena con él un autoencoder variacional de latente
+bidimensional y se muestrea el plano aprendido en una rejilla regular que se
+exporta como cabecera en C. Todo ello ocurre en el ordenador y una sola vez;
+el instrumento recibe únicamente el resultado.
+
+\section{El conjunto de datos de partida}
+\label{sec:datos}
+
+El material de entrenamiento procede de \gls{akwf} \cite{AKWF}, una colección
+pública de formas de onda de un ciclo pensada originalmente para cargar en
+sintetizadores wavetable. Contiene 4358 ondas repartidas en 65 carpetas, todas
+con el mismo formato, monofónicas y de 600 muestras por ciclo.
+
+Esa homogeneidad de formato es lo que hace la colección utilizable sin apenas
+trabajo de limpieza. Lo que interesa, en cambio, es su heterogeneidad sonora.
+Hay carpetas de formas geométricas clásicas, de emulaciones de instrumentos
+acústicos, de sonidos de videoconsola y de material ruidoso sin tono definido.
+Un autoencoder solo puede organizar un plano de timbres si el material de
+partida tiene timbres distintos que organizar, así que esa variedad es un
+requisito y no un adorno.
+
+Conviene aclarar desde el principio qué son esas 65 carpetas. Son etiquetas de
+organización que puso el autor de la colección, no una clasificación tímbrica
+rigurosa. Se emplean más adelante para colorear las figuras del espacio
+latente, porque ayudan a leerlas, pero en ningún momento entran en el
+entrenamiento. El modelo no ve etiquetas de ningún tipo.
+
+\section{Preprocesado}
+\label{sec:preprocesado}
+
+Antes de entrenar hay que dejar las 4358 ondas en un formato común, tarea de
+la que se ocupa el guion de preprocesado,
+\texttt{2\_\allowbreak build\_\allowbreak dataset.py}, que aplica cuatro operaciones a
+cada onda.
+
+\textbf{Remuestreo a 1024 muestras.} Se emplea \texttt{scipy.signal.resample},
+que interpola en el dominio de la frecuencia mediante la \gls{fft} en lugar de
+hacerlo en el tiempo. La diferencia importa porque una interpolación espectral
+respeta la periodicidad de la señal y devuelve un ciclo que sigue cerrando
+sobre sí mismo, mientras que un método temporal introduciría una discontinuidad
+en el punto de empalme. El porqué de 1024 y no otro tamaño ya se justificó en
+el apartado~\ref{sec:parametros}.
+
+\textbf{Eliminación de la componente continua.} Se resta la media de la onda.
+Una tabla con desplazamiento vertical produce un salto en la salida del
+conversor al cambiar de timbre y, sumada a otra tabla durante una transición,
+desplaza el resultado sin aportar nada audible.
+
+\textbf{Alineación de fase.} Es el paso central y merece detenerse en él. Las
+ondas de \gls{akwf} vienen guardadas arrancando aproximadamente en el cruce por
+cero ascendente del ciclo, pero esa referencia no es fiable. Una onda con mucho
+contenido armónico cruza el cero muchas veces, así que el punto de arranque
+elegido es en buena medida arbitrario y varía de una onda a otra. Dos ondas con
+el mismo espectro y distinto punto de arranque son, para la red, dos entradas
+diferentes, y promediarlas produce cancelaciones entre armónicos en lugar de un
+timbre intermedio.
+
+La solución adoptada consiste en rotar cada ciclo hasta dejar su armónico
+fundamental en fase cero. La rotación se hace en el dominio de la frecuencia,
+multiplicando el armónico $k$ por $e^{-jk\varphi}$, siendo $\varphi$ la fase del
+fundamental. Eso equivale a un desplazamiento circular de la onda que además
+admite valores fraccionarios de muestra, y como se aplica a todos los armónicos
+de forma coherente, el ciclo sigue cerrando y no aparece ningún chasquido.
+
+Un detalle del resultado despista al mirarlo por primera vez. Tras alinear, las
+ondas no arrancan todas en el mismo valor de amplitud. No es un fallo del
+procedimiento. Lo que queda alineado es el fundamental, mientras que la muestra
+cero de cada onda es la suma de ese fundamental y de todos los armónicos
+superiores, cuyo reparto es distinto en cada caso. Dicho de otro modo, lo que
+sobrevive a la alineación es precisamente lo que distingue un timbre de otro.
+
+La propiedad que de verdad se persigue es la invarianza. La
+Figura~\ref{fig:alineacion} la comprueba tomando una misma onda y arrancándola
+en cuatro puntos distintos del ciclo. Antes de alinear son cuatro curvas
+claramente diferentes; después, las cuatro colapsan en una sola, con una
+diferencia máxima entre ellas del orden de $10^{-16}$, que es cero a efectos de
+la precisión de la máquina. Con esa garantía, el punto de arranque de la onda
+original deja de existir como variable, y la interpolación lineal entre tablas
+sobre la que descansa todo el sistema, justificada en el
+apartado~\ref{sec:fases}, opera sobre ondas que comparten referencia.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=\textwidth]{alineacion.pdf}
+    \caption{Invarianza de la alineación al punto de arranque. La misma onda
+             desplazada 0, 137, 411 y 700 muestras produce cuatro curvas
+             distintas; tras llevar el fundamental a fase cero, las cuatro
+             quedan superpuestas.}
+    \label{fig:alineacion}
+\end{figure}
+
+\textbf{Normalización de amplitud.} Cada onda se divide por su valor absoluto
+máximo, de modo que todas ocupan el rango $[-1, 1]$. Así el modelo no gasta
+capacidad en representar diferencias de nivel, que en un instrumento las fija
+la dinámica de la nota y no la tabla.
+
+Queda un caso que el procedimiento no puede tratar igual. Las ondas ruidosas o
+percusivas no tienen un fundamental identificable, y rotar el ciclo tomando
+como referencia la fase de un armónico despreciable introduciría un giro
+aleatorio. El guion detecta esa situación comparando la magnitud del
+fundamental con la del armónico más fuerte, y si la relación cae por debajo de
+$10^{-3}$ deja la onda sin rotar en lugar de descartarla. Afecta a 100 ondas, un
+2,3\,\% del total, concentradas en las carpetas de ruido, de material estéreo y
+de instrumentos frotados. Es exactamente el material del que cabía esperarlo, y
+mantenerlo en el conjunto aporta variedad tímbrica en los bordes del espacio
+sin comprometer la alineación del resto.
+
+El resultado es una matriz de $4358 \times 1024$ valores en coma flotante, que
+es lo que consume el entrenamiento.
+
+\section{Arquitectura del modelo}
+\label{sec:modelo}
+
+El modelo es un autoencoder variacional de capas totalmente conectadas. El
+codificador reduce las 1024 muestras a 512 y después a 128, y de ahí salen dos
+vectores de dos componentes, la media y el logaritmo de la varianza de la
+distribución latente. El decodificador es el espejo exacto, de 2 a 128, a 512 y
+a 1024. Las capas intermedias usan la función de activación lineal rectificada
+y la salida usa tangente hiperbólica, que acota el resultado en $[-1, 1]$ y
+recoge así la normalización de amplitud del apartado anterior. En total suma
+1.182.724 parámetros.
+
+Cabe preguntarse por qué capas totalmente conectadas y no convolucionales, que
+son la elección habitual cuando la entrada es una señal. La razón está en el
+preprocesado. Una red convolucional aporta invarianza a traslación, útil cuando
+el mismo patrón puede aparecer en cualquier posición de la entrada, pero la
+alineación de fase ya eliminó esa variabilidad y todas las ondas llegan a la red
+con la misma referencia y la misma longitud. La invarianza que aportaría la
+convolución ya está resuelta antes de entrar, así que solo añadiría
+complejidad.
+
+La Tabla~\ref{tab:vae} recoge la configuración completa del modelo y del
+entrenamiento.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Configuración del autoencoder variacional y del entrenamiento.}
+    \label{tab:vae}
+    \begin{tabular}{ll}
+        \toprule
+        \textbf{Parámetro} & \textbf{Valor} \\
+        \midrule
+        Dimensión de entrada y salida & 1024 \\
+        Capas ocultas del codificador & 512, 128 \\
+        Dimensión del espacio latente & 2 \\
+        Activación intermedia & lineal rectificada \\
+        Activación de salida & tangente hiperbólica \\
+        Parámetros entrenables & 1.182.724 \\
+        \midrule
+        Optimizador & Adam, tasa de aprendizaje $10^{-3}$ \\
+        Tamaño de lote & 64 \\
+        Épocas & 300 \\
+        División entrenamiento/validación & 3923 / 435 (90/10) \\
+        Peso de la divergencia, $\beta$ & 0,001 \\
+        Rampa de $\beta$ & lineal, 50 épocas \\
+        Semilla & 42 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\section{Función de pérdida y elección de \texorpdfstring{$\beta$}{beta}}
+\label{sec:beta}
+
+La función que se minimiza es la que se planteó en el capítulo~2, el \gls{mse}
+entre la onda de entrada y su reconstrucción más la divergencia de
+Kullback-Leibler ponderada por un factor $\beta$. El primer término pide
+fidelidad y el segundo pide que las distribuciones que produce el codificador se
+parezcan a una normal estándar, lo que mantiene el plano latente ocupado de
+forma continua.
+
+El valor adoptado es $\beta = 0{,}001$, y conviene precisar en qué dirección va
+esa elección. Higgins y sus coautores introducen el factor proponiendo valores
+\emph{mayores} que la unidad, porque su objetivo es obtener representaciones
+desenredadas, en las que cada dimensión del latente controle un factor de
+variación independiente e interpretable \cite{Higgins2017}. Aquí se ha adoptado
+el compromiso contrario, con un valor tres órdenes de magnitud por debajo de la
+unidad.
+
+La razón es que el objetivo no coincide. Un latente de dos dimensiones destinado
+a un dedo sobre una pantalla no necesita ejes con significado semántico
+separable, porque el usuario no manipula parámetros con nombre, sino que explora
+una superficie y se queda donde le gusta lo que oye. Lo que sí necesita es
+reconstruir con la mayor fidelidad posible y no dejar huecos entre zonas
+ocupadas. Penalizar con fuerza la divergencia habría acercado todas las
+distribuciones a la normal estándar y, con ellas, todas las reconstrucciones a
+la onda media, que es el resultado que arruina un instrumento pensado para
+recorrer timbres. La regularización sigue haciendo falta, y por eso el término
+está presente, pero con el peso justo para ordenar el plano sin aplanarlo.
+
+Al entrenamiento se le añadió además una precaución que no estaba en el plan
+inicial. En lugar de aplicar $\beta$ desde la primera época, se sube de cero a
+su valor definitivo mediante una rampa lineal a lo largo de las 50 primeras. Es
+la técnica que emplean Bowman y sus coautores para evitar el colapso posterior
+\cite{Bowman2016}, ya descrita en el capítulo~2. Durante esas primeras épocas el
+modelo se concentra en aprender a reconstruir, y solo cuando ya tiene algo que
+perder entra la presión de la regularización.
+
+\section{Entrenamiento}
+\label{sec:entrenamiento}
+
+El entrenamiento se ejecutó en local sobre una tarjeta gráfica NVIDIA RTX 3060.
+El modelo es pequeño para el hardware disponible, así que las 300 épocas no
+supusieron ninguna limitación y no hubo necesidad de recurrir a servicios de
+cómputo remoto. El conjunto se dividió en 3923 ondas para entrenar y 435 para
+validar, con semilla fija para que la partición sea reproducible.
+
+La Figura~\ref{fig:perdidas} recoge la evolución de las dos magnitudes que
+interesan\footnote{El guion de entrenamiento no guarda el histórico de pérdidas
+en disco, solo la figura que genera al terminar, y volver a obtenerlo exigiría
+reentrenar el modelo, lo que daría unos pesos distintos y obligaría a rehornear
+la rejilla ya embarcada en el firmware. Las series se recuperaron por tanto de
+esa figura, midiendo la posición de cada curva y convirtiéndola a coordenadas de
+dato con la calibración de los ejes. Los valores finales así obtenidos coinciden
+con los que imprimió el entrenamiento, pero la reconstrucción es aproximada y la
+figura vale por su forma y no por su precisión punto a punto.}.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=\textwidth]{perdidas.pdf}
+    \caption{Evolución del error de reconstrucción y de la divergencia de
+             Kullback-Leibler a lo largo de las 300 épocas. La línea de puntos
+             del panel izquierdo marca el momento en que la validación deja de
+             mejorar; la del derecho, el final de la rampa de $\beta$.}
+    \label{fig:perdidas}
+\end{figure}
+
+Los valores al terminar son un error de reconstrucción de 0,043 en entrenamiento
+y de 0,068 en validación, con la divergencia estabilizada en torno a 7. Esa
+divergencia es el primer indicio de que el modelo funciona como debe, porque un
+valor claramente distinto de cero significa que el latente transporta
+información. Si el modelo hubiese optado por ignorarlo, la divergencia habría
+caído a cero y el decodificador produciría la misma onda para cualquier
+coordenada.
+
+El panel izquierdo muestra también un comportamiento que conviene nombrar sin
+rodeos. El error de entrenamiento sigue bajando hasta el final, pero el de
+validación se aplana en torno a 0,065 hacia la época 40 y a partir de ahí
+incluso repunta ligeramente. Es la firma habitual del sobreajuste, y significa
+que las más de 250 épocas restantes no aportaron capacidad de generalización
+alguna. La distancia entre ambas curvas es moderada y el modelo sigue siendo
+utilizable, pero el mismo resultado se habría conseguido en una fracción del
+tiempo deteniendo el entrenamiento hacia la época 80.
+
+\section{El espacio latente resultante}
+\label{sec:latente}
+
+Terminado el entrenamiento, cada una de las 4358 ondas tiene asignada una
+coordenada en el plano. La Figura~\ref{fig:latente} las representa todas,
+coloreando las doce carpetas más numerosas y dejando el resto en gris.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=\textwidth]{latente.pdf}
+    \caption{Espacio latente aprendido. Cada punto es la media de la
+             distribución que el codificador asigna a una onda. El rectángulo a
+             trazos delimita los percentiles 2 y 98 de cada eje, y las cruces
+             son los 256 nodos que se decodifican para formar la rejilla.}
+    \label{fig:latente}
+\end{figure}
+
+La nube ocupa aproximadamente de $-4{,}2$ a $7{,}0$ en el primer eje y de
+$-5{,}3$ a $6{,}9$ en el segundo, con la densidad concentrada en torno al origen
+y unos pocos puntos dispersos hacia los bordes. Es la forma que produce un
+autoencoder variacional sano. El término de regularización empuja la masa hacia
+el centro, y las ondas más atípicas son las únicas que compensa alejar pagando
+el coste que eso supone en la pérdida. Un latente colapsado tendría un aspecto
+muy distinto, con todos los puntos apelotonados en una región mínima y una
+divergencia próxima a cero.
+
+Hay un rasgo de la figura que a primera vista parece un mal resultado y no lo
+es. Las carpetas se solapan mucho entre sí, y ninguna forma un grupo bien
+separado del resto. Ahora bien, encajar 65 categorías en un plano de dos
+dimensiones de forma separable no es posible, y tampoco es lo que se pide al
+modelo. El codificador organiza las ondas por su forma, que es lo único que ve,
+de manera que dos carpetas distintas con contenido espectral parecido acaban
+ocupando la misma zona. Para el uso previsto eso es justo lo deseable, porque lo
+que tiene que garantizar el plano es que puntos próximos suenen parecido, no que
+la carpeta de origen sea recuperable.
+
+\section{Fidelidad de la reconstrucción}
+\label{sec:reconstruccion}
+
+Las cifras de pérdida dicen cuánto se equivoca el modelo de media, pero no en
+qué se equivoca. La Figura~\ref{fig:reconstrucciones} compara cuatro ondas del
+conjunto con la salida del decodificador, ordenadas de menor a mayor error.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=\textwidth]{reconstrucciones.pdf}
+    \caption{Cuatro ondas del conjunto de entrenamiento frente a su
+             reconstrucción, con el error cuadrático medio de cada una. La
+             pérdida de detalle se concentra en los flancos verticales.}
+    \label{fig:reconstrucciones}
+\end{figure}
+
+El patrón es claro. Las ondas suaves, con pocos armónicos y sin
+discontinuidades, se recuperan casi exactas. Las que tienen escalones y flancos
+verticales pierden precisamente los flancos, que el decodificador sustituye por
+transiciones redondeadas, y el error crece a medida que aumenta el número de
+esos escalones.
+
+Este comportamiento es el límite intrínseco del cuello de botella de dos
+dimensiones y no un defecto del entrenamiento. Un flanco vertical exige mucho
+contenido de alta frecuencia, y ese contenido no cabe en dos números. Obligado a
+elegir, el modelo aprende los rasgos perceptuales gruesos, que son la cantidad
+de brillo y el número de picos por ciclo, y descarta el detalle fino. Es la
+contrapartida directa de haber fijado el latente en dos dimensiones por
+exigencia del control táctil, condicionante que ya se enunció en el capítulo~1.
+
+Con estos resultados sobre la mesa se planteó si convenía volver a entrenar
+antes de seguir. Se decidió que no, por cuatro motivos. El primero es que el
+objetivo del instrumento no es reproducir fielmente cada onda del conjunto, sino
+recorrer un plano de timbres con transiciones suaves, y para eso importa que el
+latente sea continuo y esté bien repartido, cosa que ya cumplía. El segundo es
+que subir $\beta$ para suavizar aún más el plano habría acercado todo hacia la
+media, con lo que se gana regularidad y se pierde carácter. El tercero es que
+retirar del conjunto las carpetas de ondas más dentadas habría reducido la
+variedad tímbrica disponible sin resolver el suavizado de flancos, que depende
+de la dimensión del latente y no del material de entrada. El cuarto es que
+recortar el número de épocas ahorra tiempo de cálculo pero no cambia el modelo
+resultante. Se fijó, eso sí, un criterio para más adelante, y es que si al
+escuchar el resultado apareciera algo objetivamente defectuoso, se reentrenaría
+entonces con ese dato y no antes.
+
+\section{Horneado de la rejilla}
+\label{sec:rejilla}
+
+El último paso de la fase de preparación convierte el decodificador en una
+tabla. El guion \texttt{4\_\allowbreak bake\_\allowbreak grid.py} codifica todo el conjunto para conocer
+la distribución real del plano, fija los límites de la zona que interesa
+muestrear, decodifica una onda en cada nodo de una rejilla regular y exporta el
+resultado.
+
+La primera decisión es dónde poner los límites. Un cuadrado fijo y generoso, del
+tipo $[-6, 6]$ en ambos ejes, dejaría las esquinas de la rejilla en zonas del
+plano donde no cayó ninguna onda durante el entrenamiento. El decodificador
+sigue produciendo algo en esos puntos, pero es una extrapolación de la que no
+hay ninguna garantía. En su lugar se toman los percentiles 2 y 98 de cada eje,
+que recortan la zona efectivamente poblada y dejan fuera los pocos puntos
+extremos. Los valores resultantes son $[-2{,}239,\ 3{,}054]$ en el primer eje y
+$[-3{,}010,\ 2{,}429]$ en el segundo, y son los que dibuja el rectángulo de la
+Figura~\ref{fig:latente}. El precio es perder los timbres más raros, que
+quedaban justamente en los bordes; la ganancia es que cualquier punto que toque
+el usuario cae en terreno conocido.
+
+La segunda es que la decodificación tiene que ser determinista. Un autoencoder
+variacional muestrea la distribución latente durante el entrenamiento, pero en
+modo de evaluación la reparametrización devuelve directamente la media, de modo
+que un mismo nodo produce siempre la misma onda. Sin eso, la rejilla dependería
+de la semilla y dejaría de ser reproducible.
+
+La tercera es el formato de salida. El decodificador entrega valores en
+$[-1, 1]$ y la cabecera los guarda como enteros de 16 bits con signo en formato
+Q15, tal como se fijó en el apartado~\ref{sec:parametros}. Las 256 tablas de
+1024 muestras ocupan así 512~kB de memoria de programa, frente al doble que
+habrían ocupado en coma flotante. La cabecera incluye además los cuatro límites
+del plano latente, porque el ESP32-S3 los necesita para traducir la coordenada
+táctil a coordenada del espacio, y fija la convención de índices que el firmware
+tiene que respetar, con la fila recorriendo el segundo eje y la columna el
+primero.
+
+La Figura~\ref{fig:rejilla} muestra el contenido de la rejilla horneada.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.92\textwidth]{rejilla.pdf}
+    \caption{Contenido de la rejilla, dibujando uno de cada tres nodos en cada
+             eje para que las ondas resulten legibles. El submuestreo permite
+             ver la variedad de formas repartida por el plano, no la semejanza
+             entre celdas contiguas.}
+    \label{fig:rejilla}
+\end{figure}
+
+Al saltarse dos nodos de cada tres, la figura no sirve para juzgar si celdas
+vecinas se parecen entre sí, pero sí deja ver que el plano cubre formas muy
+distintas, desde pulsos casi rectangulares hasta ondas de varios picos con mucho
+contenido armónico. Que las celdas realmente contiguas se parezcan viene
+garantizado por otra vía, y es que el decodificador es una función continua y
+dos nodos adyacentes están muy próximos en el plano de entrada.
+
+\section{Validación previa al embarque}
+\label{sec:demo}
+
+Antes de llevar la rejilla al hardware convenía escucharla. Para eso se escribió
+\texttt{5\_\allowbreak demo\_\allowbreak morph.py}, que reproduce en el ordenador exactamente lo que
+después hará el instrumento, con el ratón en lugar del dedo, interpolación
+bilineal entre las cuatro celdas vecinas y un acumulador de fase que cambia de
+tabla sin reiniciarse. Trabajar así permite separar los problemas del modelo de
+los del firmware, porque cualquier defecto que aparezca en esta demostración es
+necesariamente del modelo o de la rejilla.
+
+La primera escucha dio un aviso. Al recorrer el plano, todas las posiciones
+sonaban bastante parecidas. Ese síntoma admite dos causas muy distintas y
+conviene no confundirlas. Podía ser que la rejilla estuviera colapsada, con todo
+el plano decodificando prácticamente la misma onda pese a lo que indicaba la
+divergencia. O podía ser un efecto perceptual, porque el tono de prueba estaba
+fijado en 110~Hz y a esa altura los armónicos quedan tan juntos que timbres
+distintos tienden a fundirse al oído.
+
+Para distinguirlas se añadieron tres instrumentos de diagnóstico a la propia
+demostración. Un osciloscopio que dibuja la onda interpolada en tiempo real, que
+permite ver si la forma cambia aunque el oído no lo note. Un arpegiador con el
+tono base subido a 220~Hz, para escuchar el mismo recorrido en un registro donde
+los armónicos se separan. Y un medidor de diversidad que calcula la distancia
+\gls{rms} entre la onda actual y la onda media de la rejilla, junto a una sonda
+que compara las cuatro esquinas al arrancar.
+
+Las medidas descartaron el colapso. La distancia \gls{rms} entre las cuatro
+esquinas de la rejilla va de 0,63 a 1,04 según el par que se compare, y la
+diversidad respecto a la onda media recorre de 0,18 a 0,68 al barrer el plano.
+Sobre ondas normalizadas en $[-1, 1]$ son diferencias grandes, no matices. Al
+subir el tono, la variación tímbrica pasó a ser evidente también al oído, con lo
+que la causa quedó identificada como perceptual y atribuible al tono grave de la
+prueba inicial.
+
+Con esa verificación, la fase de preparación queda cerrada. El resultado que
+pasa al resto del sistema es un único archivo, la cabecera con las 256 tablas y
+los límites del plano latente, que se compila junto al firmware del ESP32-S3
+descrito en el capítulo siguiente.

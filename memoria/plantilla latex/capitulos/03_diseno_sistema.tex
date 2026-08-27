@@ -160,7 +160,7 @@ es además la práctica habitual en la instrumentación electrónica modular.
 
 El sistema opera en dos fases separadas en el tiempo y en el lugar, recogidas en
 la Figura~\ref{fig:pipeline}. La primera ocurre una sola vez, en el ordenador, y
-es la única en la que interviene la red neuronal. El corpus de formas de onda se
+es la única en la que interviene la red neuronal. El conjunto de formas de onda se
 homogeneiza, se entrena el autoencoder variacional, se muestrea el plano latente
 en una rejilla regular decodificando cada nodo, y el resultado se exporta como
 una cabecera en C que se compila junto al firmware del ESP32-S3. La segunda
@@ -176,13 +176,13 @@ ocurre en el instrumento, en cada toque, y no ejecuta ninguna red.
 \end{figure}
 
 Conviene aclarar qué contiene la rejilla, porque es el punto que sostiene toda
-la estrategia. Los 256 nodos no son una selección de las formas de onda del
-corpus. Una vez entrenado el modelo, el codificador reparte las ondas originales
+la estrategia. Los 256 nodos no son una selección de las ondas de
+partida. Una vez entrenado el modelo, el codificador reparte las ondas originales
 como puntos dispersos por un plano continuo, y el decodificador sabe generar una
 onda para cualquier posición de ese plano, incluidas las que no corresponden a
 ninguna onda real. Generar la rejilla es muestrear esa superficie continua en
 cruces regulares, de modo que la mayoría de los nodos son formas de onda nuevas.
-Lo aprendido a partir del corpus reside en los pesos del decodificador, y la
+Lo aprendido a partir del conjunto de datos reside en los pesos del decodificador, y la
 rejilla es solo una captura de esa superficie a una resolución elegida. Lo que
 fija su tamaño, por tanto, es la finura con la que se navega el espacio y la
 memoria que se consume, no la variedad de timbres disponibles.
@@ -227,7 +227,7 @@ formato de las tramas y el motor de audio.
     \end{tabular}
 \end{table}
 
-El tamaño de 1024 muestras merece justificación, porque las ondas del corpus
+El tamaño de 1024 muestras merece justificación, porque las ondas del conjunto de datos
 tienen 600. Una onda de 600 muestras contiene como mucho 300 armónicos, que es
 el límite de Nyquist del propio ciclo, y 1024 es la menor potencia de dos por
 encima de ese valor. Remuestrear a 1024 recoge entonces todo el contenido
@@ -239,7 +239,7 @@ con una máscara de bits en lugar de con una operación de módulo.
 
 Queda por justificar una ausencia. Como se indicó en el capítulo 2, la
 limitación de banda de las tablas no forma parte de este trabajo. El
-\emph{aliasing} no lo introduce el remuestreo del corpus, que es una operación
+\emph{aliasing} no lo introduce el remuestreo del conjunto de datos, que es una operación
 sin pérdida, sino la reproducción de notas agudas, cuando los armónicos altos de
 la tabla superan la frecuencia de Nyquist. Corregirlo exige almacenar varias
 versiones filtradas de cada forma de onda y elegir la adecuada según la nota, lo
