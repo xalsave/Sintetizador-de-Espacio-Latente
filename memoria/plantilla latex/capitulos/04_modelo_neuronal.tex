@@ -359,11 +359,14 @@ La tercera es el formato de salida. El decodificador entrega valores en
 $[-1, 1]$ y la cabecera los guarda como enteros de 16 bits con signo en formato
 Q15, tal como se fijó en el apartado~\ref{sec:parametros}. Las 256 tablas de
 1024 muestras ocupan así 512~kB de memoria de programa, frente al doble que
-habrían ocupado en coma flotante. La cabecera incluye además los cuatro límites
-del plano latente, porque el ESP32-S3 los necesita para traducir la coordenada
-táctil a coordenada del espacio, y fija la convención de índices que el firmware
-tiene que respetar, con la fila recorriendo el segundo eje y la columna el
-primero.
+habrían ocupado en coma flotante. La cabecera fija además la convención de
+índices que el firmware tiene que respetar, con la fila recorriendo el segundo
+eje y la columna el primero, y deja anotados los cuatro límites del plano
+latente como constancia de qué región representa la rejilla. Esos límites no
+llegan a usarse en el instrumento, porque al ESP32-S3 le basta con recorrer la
+rejilla por índices y la correspondencia con el plano latente queda implícita en
+el propio muestreo, pero son lo que permite reconstruir de dónde salió cada
+tabla si se rehornea con otros valores.
 
 La Figura~\ref{fig:rejilla} muestra el contenido de la rejilla horneada.
 

@@ -1,1 +1,319 @@
 \chapter{Firmware de control: ESP32-S3 y CYD}
+\label{cap:firmware-control}
+
+Este capítulo recorre las dos placas que convierten un dedo apoyado sobre un
+cristal en una forma de onda lista para sonar. El reparto de tareas entre
+procesadores, la elección del medio de cada enlace y el tamaño de las tramas ya
+quedaron justificados en el capítulo~\ref{cap:diseno}, en los
+apartados~\ref{sec:arquitectura} y~\ref{sec:enlaces}. Aquí interesa el cómo, es
+decir, cómo se lee y se calibra el táctil, cómo se localiza la celda de la
+rejilla y se mezclan sus vecinas, cómo se construyen las tramas y cómo se reduce
+la onda para dibujarla. Todo lo que sigue corresponde a la fase de ejecución
+descrita en el apartado~\ref{sec:fases}, en la que no interviene ninguna red
+neuronal.
+
+\section{Lectura y calibración del táctil}
+\label{sec:tactil}
+
+La \gls{cyd} es una placa genérica sin manual de fabricante, cuya documentación
+es comunitaria \cite{CYDrepo}, así que los pines se confirmaron uno a uno contra
+el esquemático que la acompaña. Integra una pantalla \gls{tft} de 240$\times$320
+puntos y un táctil resistivo de cuatro hilos gobernado por un XPT2046, que es un
+convertidor analógico-digital de aproximaciones sucesivas
+(\gls{sar}) de 12 bits \cite{XPT2046}. De ahí sale el dato que gobierna toda la
+calibración, y es que cada eje se lee como un entero entre 0 y 4095 en cuentas
+del convertidor, sin ninguna relación directa con los píxeles de la pantalla.
+
+Táctil y pantalla cuelgan de buses distintos, y no por casualidad. El táctil usa
+el bus VSPI con un objeto propio y los pines de fábrica de la placa, mientras que
+la pantalla se controla con la librería \texttt{TFT\_eSPI} \cite{TFTeSPI} sobre
+el bus HSPI. Por defecto esa librería también tomaría el VSPI, con lo que dos
+objetos acabarían disputándose el mismo periférico. Forzando el HSPI son dos
+buses independientes que conviven sin estorbarse, y de paso los pines 12 a 15
+son los nativos del HSPI en el ESP32, encaminados por la matriz \mbox{IO MUX}
+\cite{EspressifESP32}, que es la ruta directa y rápida. El táctil se lee con la
+librería de Stoffregen \cite{XPT2046Touchscreen}.
+
+Esa configuración vive en el fichero de proyecto de PlatformIO y no en el
+\texttt{User\_Setup.h} de la librería, que es donde normalmente se pone. El
+motivo es práctico. Ese fichero se instala dentro del directorio de dependencias
+descargadas, fuera del control de versiones, de modo que la configuración se
+perdería al reinstalar la librería o al clonar el proyecto en otro ordenador.
+Declarándola como definiciones de compilación viaja con el repositorio. Hay
+además un detalle de la placa que conviene no reaprender, y es que la
+retroiluminación arranca apagada. La pantalla puede estar pintando
+perfectamente y verse negra, indistinguible de un cuelgue, así que se enciende a
+mano en la primera línea del arranque. Justo después se dibuja un patrón de
+barras de color con un marco, que permite validar el controlador, la orientación
+y los colores sin depender todavía del ESP32-S3.
+
+\subsection{De las cuatro esquinas a las dos ventanas}
+
+La primera calibración se hizo tocando las cuatro esquinas del cristal con un
+puntero, que al tener un área de contacto pequeña da lecturas más extremas y
+limpias que el dedo. De ahí salieron los límites 133 a 3947 en el eje horizontal
+y 193 a 3897 en el vertical.
+
+Esos números dejaron de valer cuando la placa se montó girada 180 grados en el
+panel, decisión de montaje que se explica en el capítulo~\ref{cap:hardware} y que
+busca alejar el conector \gls{usb} de la pantalla \gls{oled}. Al girar la imagen
+hay que girar también el táctil, y aquí apareció un hallazgo que ahorró trabajo.
+La librería sí aplica la rotación a las lecturas crudas, restándolas de 4095, lo
+que evita invertir el mapeo a mano. Pero, por eso mismo, los cuatro límites de
+calibración quedan espejados y hay que rehacerlos cruzando mínimo con máximo,
+con lo que pasan a 148 a 3962 y 198 a 3902.
+
+La ventana impresa del panel se come parte del cristal, y esa parte hubo que
+medirla. La predicción hecha sobre plano, que daba un recorte de 3,75~mm por el
+lado izquierdo y nada en vertical, no resistió el banco. Con la placa ya montada,
+tocando las cuatro esquinas del hueco, los límites reales salieron 450 a 3730 en
+los dos ejes. El labio asimétrico del panel existe, pero pesan más el error de
+montaje y un ligero giro del táctil respecto al hueco. Se intentó ajustar esquina
+por esquina y se descartó, porque las dos lecturas superiores no coincidían entre
+sí en el eje vertical, con unas 230 cuentas de desviación entre la izquierda y la
+derecha. Esa discrepancia es la firma de un giro, y un mapeo rectangular no puede
+corregir un giro, así que perseguir cuatro números que no cuadran entre ellos
+solo habría movido el problema de sitio.
+
+Quedaba un problema más difícil. El labio impreso apoya sobre el cristal en todo
+el perímetro y genera pulsaciones fantasma pegadas al borde. Una de las medidas
+dio la lectura cruda (3714, 643), a solo 16 cuentas del límite derecho, es decir
+dentro del rectángulo que se había dado por útil. Ningún ajuste de esos límites
+podía rechazarla sin rechazar también contacto legítimo del dedo. Se probó
+entonces a filtrar por presión, aprovechando que el XPT2046 la estima y que el
+plástico apoya de forma constante pero floja mientras el dedo aprieta más, y
+también se descartó. La fiabilidad de esa lectura en esta placa concreta es
+dudosa y, sobre todo, introducía un umbral que mal ajustado podía dejar el táctil
+mudo.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.70\textwidth]{ventanas.pdf}
+    \caption{Las dos ventanas del táctil sobre el plano de cuentas crudas del
+             convertidor. La de captura decide qué toques valen y es la que se
+             mapea al rango de la coordenada; la visible solo sirve para acotar
+             el área de dibujo. La pulsación fantasma medida cae dentro de la
+             visible y fuera de la de captura.}
+    \label{fig:ventanas}
+\end{figure}
+
+La solución fue dejar de usar un solo rectángulo y separar dos, recogidos en la
+Figura~\ref{fig:ventanas}. La ventana \emph{visible}, de 450 a 3730, describe lo
+que asoma por el hueco y solo se emplea para calcular el área de dibujo. La
+ventana de \emph{captura}, de 600 a 3580, decide qué toques se dan por buenos y
+deja 150 cuentas de margen por cada lado, unos 2,5~mm. El fantasma medido queda
+fuera de ella con 134 cuentas de holgura.
+
+El detalle que hace que esa holgura no cueste nada es cuál de las dos ventanas se
+mapea al rango de la coordenada. Se mapea la de captura, no la visible, de modo
+que el espacio latente se sigue alcanzando entero de extremo a extremo y lo único
+que se pierde son esos 2,5~mm de recorrido del dedo por lado. Mapear la visible
+habría dejado las esquinas del plano inalcanzables, que es justamente el defecto
+que la recalibración venía a quitar. Y el rechazo es total, no un recorte. La
+versión anterior sujetaba la lectura al rango con una función de saturación, así
+que un contacto del plástico se enviaba igual, clavado contra el borde del
+espacio latente. Ahora un toque fuera de la ventana de captura no genera envío ni
+repinta nada, y el instrumento se queda exactamente como estaba.
+
+El táctil se atiende cada 50~ms, sin bloquear el bucle, y solo se envía
+coordenada cuando el punto se ha desplazado más de 300 unidades respecto al
+último enviado. Como una celda de la rejilla ocupa 4369 unidades del rango de 16
+bits, ese umbral es menos de la décima parte de una celda, suficientemente fino
+para que el recorrido se perciba continuo y suficientemente grueso para no
+saturar el enlace con la vibración de un dedo quieto.
+
+\section{De la coordenada a la celda}
+\label{sec:coordenada}
+
+La \gls{cyd} normaliza la lectura al rango de 16 bits antes de enviarla, y esa
+decisión tiene una consecuencia comprobada. Ni el giro de 180 grados ni la
+recalibración de banco obligaron a tocar una sola línea del firmware del
+ESP32-S3, porque este sigue recibiendo el mismo rango de siempre. Resolver el
+giro en el procesador de control habría roto la separación de responsabilidades
+del apartado~\ref{sec:arquitectura} y habría dejado a la \gls{cyd} enviando
+coordenadas que no se corresponden con lo que ella misma muestra.
+
+Del lado del ESP32-S3, la trama de seis bytes descrita en el
+apartado~\ref{sec:enlaces} la decodifica una máquina de estados que busca el byte
+de cabecera, lee los cuatro de datos y valida la suma de comprobación. Ante
+cualquier fallo vuelve al estado inicial a buscar cabecera, de forma que un byte
+perdido descuadra una trama pero no el flujo. Conviene señalar que esa entrada
+convive con otra por \gls{usb}, en la que la coordenada se escribe a mano como
+texto. No es un resto de depuración olvidado. Fue lo que permitió construir y
+validar la interpolación antes de que existiera el firmware de la \gls{cyd}, y
+es también lo que hace posibles las medidas del capítulo~\ref{cap:pruebas}, que
+necesitan una coordenada conocida y estable.
+
+\section{Interpolación bilineal sobre la rejilla}
+\label{sec:bilineal}
+
+Localizar la celda es una multiplicación. La coordenada de 16 bits se escala por
+$15/65535$, con lo que se obtiene la posición real dentro de la rejilla de
+$16\times16$. La parte entera de esa posición da la celda y la parte fraccionaria
+da el peso hacia la vecina siguiente. Los dos ejes se tratan de forma
+independiente, así que un punto asimétrico no recibe ningún trato especial.
+
+El borde se resuelve sin caso particular. Cuando la coordenada vale el máximo, la
+posición escalada da exactamente 15, la vecina de la derecha se sujeta sobre sí
+misma y el peso hacia ella queda a cero. La operación sigue siendo la misma
+combinación de cuatro tablas, solo que dos de ellas coinciden y aportan peso
+nulo, con lo que no se sale del array ni hace falta una rama distinta.
+
+Hay que respetar la convención de índices que fija la cabecera generada en el
+apartado~\ref{sec:rejilla}, con la fila recorriendo el eje vertical y la columna
+el horizontal. Es el detalle más fácil de equivocar de todo el firmware y el que
+peor avisa cuando se equivoca, porque permutar los ejes no rompe nada visible.
+La interpolación sigue devolviendo formas de onda perfectamente válidas, solo que
+el espacio de timbres queda transpuesto bajo el dedo.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=\textwidth]{bilineal.pdf}
+    \caption{Interpolación bilineal para la coordenada (40000, 12000). A la
+             izquierda, la celda alcanzada, los índices de las cuatro vecinas en
+             la rejilla y el peso que recibe cada una. A la derecha, esas cuatro
+             formas de onda y la que resulta de mezclarlas.}
+    \label{fig:bilineal}
+\end{figure}
+
+La Figura~\ref{fig:bilineal} muestra el resultado para la coordenada con la que
+después se validó el enlace. Cae en la celda que va de la columna 9 a la 10 y de
+la fila 2 a la 3, con pesos de 0,155 y 0,747, de modo que la vecina inferior
+izquierda se lleva 0,631 de la mezcla y la superior derecha apenas 0,039. Se
+aprecia que la onda resultante no es una de las cuatro ni un promedio simple,
+sino que sigue de cerca a la que más pesa.
+
+Merece una aclaración cómo se hace la aritmética, porque el formato de
+almacenamiento y el de cálculo no coinciden. Las tablas se guardan como enteros
+de 16 bits en formato Q15, pero la mezcla se calcula en coma flotante de 32 bits
+y solo se redondea al pasar el resultado a Q15, una vez por muestra. El ESP32-S3
+tiene unidad de coma flotante en hardware, así que las mil y pico operaciones que
+esto cuesta son despreciables frente a los 1,6~ms que después ocupa la
+transferencia, y el cálculo se ejecuta a frecuencia de control, unas decenas de
+veces por segundo como mucho. La ventaja de hacerlo así es que cada muestra sufre
+un único redondeo en lugar de acumular el de cada paso intermedio. Tampoco hace
+falta saturar el resultado, porque los cuatro pesos suman uno y están todos entre
+cero y uno, de modo que la mezcla es una combinación convexa de cuatro valores
+que ya caben en Q15 y no puede salirse del rango.
+
+La rejilla se compila como una constante de $16\times16\times1024$ enteros de 16
+bits, es decir los 512~kB del apartado~\ref{sec:parametros}, y vive en memoria de
+programa. En el ESP32-S3 la caché mapea esa memoria al espacio de direcciones, de
+modo que se lee como cualquier otro array, sin las macros de acceso que exigen
+otras arquitecturas. En memoria de datos solo queda la tabla de trabajo, dos
+kilobytes. La \gls{psram} de 8~MB de la placa no llega a intervenir en el camino
+principal y queda como margen para la ampliación planteada en el
+apartado~\ref{sec:alternativas}.
+
+Para comprobar que esta implementación es correcta no basta con ver que produce
+algo. Se escribió una reimplementación independiente en numpy que recalcula la
+misma interpolación sobre el fichero de la rejilla y se compara muestra a muestra
+con el volcado que el ESP32-S3 imprime por \gls{usb}. Es una comprobación de
+equivalencia frente a una referencia, no de plausibilidad. El resultado se recoge
+en el capítulo~\ref{cap:pruebas}.
+
+\section{Envío de la tabla al procesador de audio}
+\label{sec:emisor-spi}
+
+El ESP32-S3 dispone de varios controladores \gls{spi}, pero dos de ellos quedan
+dedicados a la memoria de programa y la \gls{psram} del propio encapsulado y no
+son utilizables \cite{EspressifS3}. Se emplea el primero de los de propósito
+general, sobre los \gls{gpio} 10 a 13. La elección tenía que esquivar además los
+pines que ocupa la variante con memorias octales de esta placa, más el que ya
+usaba la entrada del \gls{uart}, y esos cuatro eran los que quedaban libres sin
+comprometer nada.
+
+El envío es de maestro, a 10~MHz, en modo 0 y con el bit más significativo por
+delante. El selector de chip se gobierna a mano en lugar de dejarlo al
+periférico, porque la escritura en bloque de la librería no lo conmuta por su
+cuenta. La transferencia de los 2054 bytes bloquea durante 1,6~ms, cosa que no
+supone problema alguno a la cadencia de control con la que se llama.
+
+El contenido de la trama es el del apartado~\ref{sec:enlaces}. Las 1024 muestras
+se copian en bloque, sin recorrer el array muestra a muestra, porque los dos
+extremos del enlace almacenan los enteros de 16 bits en el mismo orden de bytes
+y no hay nada que reordenar. Sobre ese bloque se calcula el \gls{crc} de 16 bits
+que cierra la trama.
+
+Ese \gls{crc} está escrito tres veces de forma idéntica, en el emisor, en el
+receptor y en el guion de validación. Duplicar código suele ser mala señal, pero
+aquí es deliberado, ya que tener la misma función en los tres sitios permite
+comparar el valor calculado en cada uno y distinguir un fallo de transporte de
+un fallo de cálculo. La validación cruzada del enlace tiene una particularidad de
+método que conviene contar. El primer intento se hizo deslizando el dedo por la
+\gls{cyd}, y resultó inútil, porque con el dedo en movimiento no hay forma de
+saber con certeza qué trama recibida corresponde a qué coordenada enviada. Se
+repitió con una coordenada fija escrita por \gls{usb}, que es lo que da una
+referencia inequívoca. Las cifras están en el capítulo~\ref{cap:pruebas}.
+
+\section{El canal de vuelta y el dibujo de la onda}
+\label{sec:pantalla}
+
+Lo que el ESP32-S3 devuelve a la pantalla es dato de representación, nunca de
+síntesis. La rejilla y la interpolación siguen viviendo solo en el procesador de
+control, y la forma de onda real únicamente sale hacia el procesador de audio por
+\gls{spi}. El enlace con la \gls{cyd} ya era bidireccional, así que abrir el
+sentido de vuelta no costó más que añadir el hilo y un emisor.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=\textwidth]{diezmado.pdf}
+    \caption{Reducción de 1024 a 256 puntos para dibujar, sobre el nodo de la
+             rejilla en el que más se separan los dos métodos. Promediar cada
+             grupo de cuatro muestras y quedarse con una de cada cuatro dan
+             prácticamente lo mismo en el grueso del ciclo, y difieren en los
+             flancos.}
+    \label{fig:diezmado}
+\end{figure}
+
+La reducción a 256 puntos de 8 bits, cuyo porqué ya se explicó en el
+apartado~\ref{sec:enlaces}, no se hace tomando una muestra de cada cuatro sino
+promediando cada grupo de cuatro antes de quedarse con un punto, y el paso de
+Q15 a Q7 se resuelve con un desplazamiento de ocho bits.
+La Figura~\ref{fig:diezmado} compara los dos métodos sobre el nodo de la rejilla
+en el que más se separan. En el grueso del ciclo coinciden, y la diferencia se
+concentra en los tramos de pendiente fuerte, donde llega a 68 cuentas de Q7 sobre
+una amplitud máxima de 122. Es decir, sin promediar la figura de la pantalla
+seguiría reconociéndose, pero colocaría mal los flancos, que es precisamente
+donde el ojo juzga la forma de una onda.
+
+Dos tropiezos de esta parte tienen causa identificada y merece la pena dejarlos
+escritos. El primero fue que no llegaba ninguna trama buena, no que llegaran
+corruptas. El buffer de recepción del puerto serie en esta plataforma es de 256
+bytes por omisión, justo por debajo de los 260 que ocupa la trama, y hay que
+agrandarlo antes de abrir el puerto. El segundo fue que las tramas se perdían
+solo mientras el dedo se movía, que es justo cuando llegan. La causa era una
+espera bloqueante en la lectura del táctil, que desatendía la recepción durante
+ese tiempo; se sustituyó por una temporización no bloqueante.
+
+El repintado se hace en dos pasadas, borrando entera la traza anterior con el
+color de fondo antes de dibujar la nueva. Repintar el área de golpe con un
+rectángulo relleno produce parpadeo en cada trama, y borrar e ir pintando de
+forma intercalada se come trozos de la línea nueva allí donde las dos se cruzan.
+El borrado arrastra también los puntos de la línea central de referencia, que se
+repintan sobre la marcha.
+
+Queda el encaje con el panel. Como este tapa un borde del cristal, dibujar sobre
+la pantalla completa dejaría parte de la interfaz debajo del plástico, así que el
+área útil se acotó a los píxeles que salen de convertir la ventana visible de la
+Figura~\ref{fig:ventanas}. Dentro de ella se reparten un título, una banda de
+estado con la coordenada, el número de secuencia y el contador de tramas
+descartadas, y el recuadro de la onda. La primera versión de ese reparto dejaba
+la banda de estado terminando en la misma fila en la que empezaba el recuadro, y
+el texto se comía la línea superior del marco. El patrón de arranque cierra el
+asunto de forma barata, porque dibuja un marco blanco justo en el límite del área
+útil y basta con ver si los cuatro lados asoman por la ventana para saber si las
+constantes cuadran con el hueco.
+
+\section{Estado del subsistema}
+
+Con esto queda cerrada la cadena que va del dedo a la trama de audio. La
+\gls{cyd} lee el táctil, lo filtra contra la ventana de captura, lo normaliza y
+lo envía; el ESP32-S3 localiza la celda, mezcla las cuatro vecinas y entrega la
+tabla por \gls{spi}, además de devolver a la pantalla una versión reducida de lo
+que está sonando. Las dos comprobaciones cuantitativas que sostienen este
+capítulo, la equivalencia de la interpolación frente a la referencia y la
+integridad del enlace, se recogen juntas en el capítulo~\ref{cap:pruebas} para
+poder leerlas al lado del resto de medidas del sistema montado. Lo que llega al
+otro extremo del bus son 2054 bytes cada vez que el dedo se mueve, y qué se hace
+con ellos es el asunto del capítulo siguiente.

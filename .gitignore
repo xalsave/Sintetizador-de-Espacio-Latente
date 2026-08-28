@@ -60,5 +60,11 @@ memoria/papers/
 memoria/referencias tfg/
 memoria/memorias_antiguas/
 
+# Hojas de caracteristicas y librerias de terceros: mismo criterio que papers/.
+# Se sube solo el indice, que es texto propio y dice que dato sostiene cada
+# fuente y de donde se descargo; los ficheros en si se quedan en local.
+memoria/manuales/*
+!memoria/manuales/README.md
+
 # PDF compilado de la memoria: se regenera con build.ps1
 memoria/plantilla latex/main.pdf
