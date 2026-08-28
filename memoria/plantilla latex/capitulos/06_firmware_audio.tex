@@ -1,2 +1,454 @@
 \chapter{Firmware de audio: Daisy Seed}
 \label{cap:firmware-audio}
+
+El capítulo anterior terminaba con 2054 bytes saliendo por el bus cada vez que
+el dedo se mueve. Este cuenta qué se hace con ellos. El reparto de tareas entre
+placas, la elección del medio de cada enlace y el tamaño de las tramas están
+justificados en el capítulo~\ref{cap:diseno}, y el lado emisor del enlace, con
+su empaquetado y su \gls{crc}, en el apartado~\ref{sec:emisor-spi}. Aquí
+interesa el cómo del lado del audio, es decir, cómo recorre la tabla el
+acumulador de fase, cómo se recibe la trama sin perturbar el sonido, cómo se
+resuelve la transición de un timbre al siguiente, cómo entran la nota y la
+dinámica y cómo se leen los mandos del panel.
+
+La Daisy Seed es una plataforma de \gls{dsp} embebido construida alrededor de
+un \gls{mcu} ARM Cortex-M7 a 480~MHz, con hardware de audio de hasta 96~kHz y
+24 bits \cite{DaisySeed}. El microcontrolador concreto es un STM32H750, que
+lleva unidad de coma flotante (\gls{fpu}) de doble precisión e instrucciones de
+tratamiento de señal \cite{STM32H750}. Esa \gls{fpu} es la que permite trabajar
+en coma flotante en todo el camino de audio en lugar de en aritmética de punto
+fijo, y por tanto olvidarse de los desbordamientos intermedios. El firmware es
+una única unidad de compilación construida sobre las dos bibliotecas oficiales
+de la plataforma, \texttt{libDaisy} para el acceso al hardware
+\cite{libDaisy} y \texttt{DaisySP} para los bloques de procesado
+\cite{DaisySP}.
+
+Lo primero que conviene fijar es que el firmware trabaja a tres ritmos
+distintos, recogidos en la Figura~\ref{fig:cadena-audio}, y que casi todas las
+decisiones de este capítulo salen de decidir qué va en cada uno. La cadena de
+audio se recorre una vez por muestra, a 48~kHz. La lectura de los mandos ocurre
+una vez por bloque de 48 muestras, es decir a 1~kHz. Y la atención al
+\gls{midi}, a las tramas y al display vive en el bucle principal, sin cadencia
+garantizada. Las flechas discontinuas de la figura son las que cruzan de un
+ritmo a otro, y son justamente las que hay que resolver con cuidado.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=\textwidth]{cadena_audio.pdf}
+    \caption{Estructura del firmware de audio y los tres ritmos a los que
+             trabaja. Las flechas continuas son la cadena de audio, muestra a
+             muestra; las discontinuas, la información que cruza de un ritmo a
+             otro.}
+    \label{fig:cadena-audio}
+\end{figure}
+
+\section{El recorrido de la tabla}
+\label{sec:motor}
+
+El acumulador de fase y la interpolación entre muestras vecinas quedaron
+descritos como técnica en el capítulo 2, con sus
+ecuaciones~\eqref{eq:incfase} a~\eqref{eq:interplineal}. Lo que toca aquí es
+cómo se implementan.
+
+La fase se guarda como un número en coma flotante de 32 bits que avanza
+$f_0 \cdot 1024 / f_s$ en cada muestra, con la frecuencia de muestreo que
+reporta la propia placa y no un valor supuesto. La parte entera de la fase da
+el índice de la muestra anterior y la parte fraccionaria, el peso hacia la
+siguiente. Aquí se cobra la decisión de que el tamaño de tabla sea potencia de
+dos, tomada en el apartado~\ref{sec:parametros}, porque el índice siguiente se
+obtiene con una máscara de bits en lugar de con una operación de módulo, y el
+retorno al principio del ciclo se resuelve restando el tamaño de la tabla en
+vez de dividiendo.
+
+Las tablas se almacenan en el mismo formato en que llegan, enteros de 16 bits
+en Q15, así que entre la recepción y la reproducción no hay ninguna conversión.
+El paso a coma flotante se hace al leer cada muestra, dividiendo por 32768.
+Podría plantearse hacer todo el camino en aritmética entera, pero no compensa.
+Con la \gls{fpu} del Cortex-M7 una multiplicación en coma flotante no cuesta más
+que una entera, y el margen dinámico deja de ser un problema en cuanto se
+encadenan el filtro, la envolvente y dos ganancias.
+
+Queda un detalle de arranque que no es cosmético. Tras la inicialización las
+dos tablas quedan a cero, de modo que la placa sería muda hasta que llegara la
+primera trama válida del procesador de control, aunque el \gls{midi} estuviera
+funcionando perfectamente. Eso convierte el primer escalón de cualquier
+encendido por partes en un falso negativo garantizado. Para evitarlo se
+construye una tabla senoidal y se carga en el búfer activo antes de arrancar el
+audio. Con ella la Daisy es un instrumento autónomo desde el primer segundo, y
+lo que hace el enlace \gls{spi} es \emph{sustituir} ese timbre en lugar de
+crearlo.
+
+\section{La llegada de la tabla}
+\label{sec:receptor-spi}
+
+La Daisy actúa como esclavo del bus, sobre el primero de sus controladores
+\gls{spi} y con los pines que fija la propia placa \cite{DaisySeed}. El enlace
+se configura de recepción exclusiva y con el selector de chip gobernado por
+hardware, así que el firmware no tiene que vigilar ninguna línea por su cuenta.
+
+La pieza que hace esto viable es el \gls{dma}. Los 2054 bytes de la trama tardan
+1,6~ms en entrar, que a 48~kHz son unos treinta bloques de audio; atender el bus
+byte a byte desde el procesador dejaría el audio sin llenar durante todo ese
+tiempo. Con acceso directo a memoria la transferencia ocurre sin intervención
+del procesador, que sigue generando muestras mientras la trama entra. El búfer
+de recepción vive además en una región de memoria reservada para el \gls{dma},
+que es obligatorio en este microcontrolador porque tiene memorias caché y un
+búfer normal podría entregar datos antiguos.
+
+La rutina que se ejecuta al terminar la transferencia corre en contexto de
+interrupción y hace una sola cosa, levantar una bandera. La comprobación de la
+cabecera, el cálculo del \gls{crc} y la copia del contenido se hacen después,
+en el bucle principal. La razón es de coste. El \gls{crc} recorre 2048 bytes
+bit a bit, y hacerlo dentro de la interrupción retrasaría la del audio, que es
+la única que no puede esperar. Si la transferencia termina con error, en cambio,
+la propia rutina vuelve a armar la recepción de inmediato, porque en ese caso no
+hay nada que validar.
+
+El tratamiento de la trama sigue el criterio del apartado~\ref{sec:enlaces}. Se
+comprueba la cabecera de sincronización, se recalcula el \gls{crc} sobre el
+contenido y se compara con el recibido. Solo si las dos comprobaciones pasan se
+copia la tabla y se pide la transición. Conviene señalar el orden, porque la
+recepción se vuelve a armar \emph{antes} de decidir si la trama servía o no,
+de forma que el bus queda escuchando cuanto antes y una trama dañada no cuesta
+más tiempo que una buena. Cuando algo falla no se hace nada más, y el
+instrumento sigue sonando con la tabla anterior en lugar de reproducir muestras
+corrompidas. La comprobación de que el transporte es exacto, con su error medido
+en \gls{lsb}, está en el capítulo~\ref{cap:pruebas}.
+
+\section{La transición entre tablas}
+\label{sec:crossfade}
+
+Que la transición se resuelva en el procesador de audio y no en el de control
+ya quedó justificado en el apartado~\ref{sec:alternativas}, por ser este el
+único que conoce la posición instantánea del acumulador. Aquí interesa cómo se
+hace y por qué dura lo que dura.
+
+El motor mantiene dos tablas, la activa y la siguiente. Al llegar una tabla
+nueva se copia sobre la siguiente y, \emph{solo cuando la copia ha terminado},
+se pone a cero la posición de la transición. Ese orden es toda la
+sincronización del mecanismo, y merece explicarse porque no es evidente. El
+bucle principal escribe la tabla mientras el callback de audio lee, así que hay
+una carrera real entre los dos. Como la posición de la transición es lo único
+que el callback consulta para decidir si mira la tabla nueva, y se escribe
+después de la copia, el callback no puede llegar nunca a un búfer a medio
+escribir. No hacen falta ni cerrojos ni deshabilitar interrupciones.
+
+Durante la transición las dos tablas se leen \emph{en la misma posición del
+acumulador} y se mezclan con pesos complementarios, que avanzan de cero a uno a
+lo largo de 20~ms. Al terminar, la tabla nueva pasa a ser la activa. Que ambas
+se lean en la misma posición tiene una consecuencia importante, y es que no hay
+discontinuidad de fase en el momento del cambio. Lo único que varía de golpe es
+la amplitud en ese punto concreto.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=\textwidth]{crossfade.pdf}
+    \caption{La transición entre dos celdas contiguas de la rejilla, las mismas
+             que alcanza la coordenada del apartado~\ref{sec:bilineal}. A la
+             izquierda, los pesos a lo largo de los 20~ms. En el centro, las dos
+             tablas y su mezcla a mitad de camino. A la derecha, el nivel de
+             pico durante la transición con mezcla lineal y con mezcla de
+             potencia constante.}
+    \label{fig:crossfade}
+\end{figure}
+
+De ahí sale la elección de mezcla lineal, que a primera vista parece la opción
+perezosa. La mezcla de potencia constante existe para señales
+\emph{descorrelacionadas}, donde la lineal deja un hueco de 3~dB en el punto
+medio porque las dos señales no se refuerzan. Aquí ocurre lo contrario. Todas
+las formas de onda comparten referencia de fase, fijada en el preprocesado del
+apartado~\ref{sec:preprocesado}, y además se leen en la misma posición del
+acumulador, de modo que sus fundamentales y armónicos bajos suman en vez de
+cancelarse. La Figura~\ref{fig:crossfade} lo mide sobre las dos celdas
+contiguas del ejemplo del apartado~\ref{sec:bilineal}, cuyo coeficiente de
+correlación es 0,971. Con mezcla lineal el pico de la señal se mantiene dentro
+de 0,34~dB durante toda la transición, mientras que la de potencia constante se
+va a 3,15~dB por encima a mitad de camino. Es decir, en este régimen la opción
+teóricamente más elaborada sería la que introduce el problema.
+
+La duración de 20~ms se fijó tras probar 5, 10 y 20. A 220~Hz un ciclo dura unos
+4,5~ms, así que 20~ms son apenas cuatro ciclos y la transición es corta en
+cualquier caso. Ahora bien, al ajustar ese valor apareció un resultado que
+conviene contar tal cual, porque a primera vista parecía un fallo. Cambiando la
+duración entre 5 y 20~ms no se apreciaba ninguna diferencia, ni siquiera
+poniéndola a cero. La comprobación que resolvió la duda fue subirla a 500~ms,
+un valor absurdo para el instrumento pero útil como diagnóstico. Con medio
+segundo se oye sin ninguna ambigüedad cómo un timbre nace despacio sobre el
+otro, lo que separa limpiamente dos preguntas que estaban mezcladas. El motor
+funciona; su efecto es imperceptible a valores de producción porque la
+transición ya es corta, porque no hay salto de fase y porque entre ondas con
+flancos duros el pequeño escalón de amplitud queda enmascarado por los flancos
+que esas ondas ya tienen en cada ciclo.
+
+Queda una limitación conocida que el crossfade no arregla dure lo que dure. Al
+saltar entre timbres muy distintos se percibe un cambio de volumen, y no es un
+artefacto de la transición sino una diferencia de valor eficaz. La normalización
+del apartado~\ref{sec:preprocesado} iguala el \emph{pico} de todas las ondas,
+no su energía, que es lo que el oído interpreta como volumen; una cuadrada tiene
+valor \gls{rms} igual a su pico y una senoidal, unas siete décimas del suyo.
+Corregirlo exigiría normalizar por \gls{rms} en el conjunto de datos, no tocar
+la transición, y tiene su propia pega, porque las ondas con factor de cresta
+alto se recortarían. Se dejó como está, porque en el uso real el recorrido
+ocurre entre celdas vecinas, que como muestra la figura son casi idénticas.
+
+\section{Nota y dinámica}
+\label{sec:midi}
+
+La interfaz \gls{midi} de hardware es un lazo de corriente de 5~mA que
+transmite a 31\,250 baudios, de forma asíncrona y con el bit menos significativo
+por delante, y exige que emisor y receptor estén separados por un optoacoplador
+para no unir sus masas \cite{MIDI1}. Esa separación es la que justifica que el
+teclado sea un aparato aparte con su propia alimentación, como se explicó en el
+apartado~\ref{sec:arquitectura}. La señal entra por el USART1 de la placa, cuya
+entrada tolera 5~V \cite{DaisySeed}, así que la salida del optoacoplador se
+conecta directamente sin adaptación de niveles. El circuito de entrada
+pertenece al capítulo~\ref{cap:hardware}.
+
+Del lado del firmware, la recepción también se hace por \gls{dma}, con un búfer
+propio y sobre un periférico distinto del que atiende el bus \gls{spi}
+\cite{libDaisy}. Es lo que permite que las dos entradas convivan sin
+estorbarse, y de hecho añadir el \gls{midi} no obligó a tocar ni una línea del
+receptor de tramas. El instrumento responde a todos los canales, sin filtrar,
+que para este uso es más robusto que quedarse con uno.
+
+La voz es monofónica con prioridad de última nota. Cada tecla pulsada entra en
+una pila y fija la frecuencia; al soltarla se vuelve a la anterior que siga
+pulsada, cambiando el tono pero sin reatacar la envolvente, lo que produce un
+ligado natural. Si no queda ninguna, se suelta la puerta y la envolvente entra
+en su tramo de liberación. La dinámica se guarda en una pila paralela a la de
+las notas, porque al volver a una tecla ya pulsada hay que recuperar también
+con qué fuerza se tocó, no solo qué nota era. Un mensaje de nota activa con
+dinámica cero se trata como si fuera de nota apagada, que es lo que exige la
+norma y además la forma más habitual de apagar una nota, porque permite
+encadenar mensajes sin repetir el byte de estado \cite{MIDI1}.
+
+La conversión de número de nota a frecuencia sigue el temperamento igual a
+partir del la de 440~Hz. Está escrita una sola vez y se usa tanto en el sonido
+como en el volcado con el que se valida, de modo que la tabla que comprueba el
+guion de verificación es exactamente la que suena. El método está aquí; las
+cifras, en el capítulo~\ref{cap:pruebas}.
+
+La dinámica se traduce a ganancia con una curva cuadrática en lugar de lineal.
+Con respuesta lineal casi todo el rango útil se concentra en la mitad alta del
+recorrido de la tecla, mientras que al elevar al cuadrado la sensación se
+reparte de forma más parecida a como se percibe la sonoridad. Esa ganancia se
+suaviza además con un filtro de un polo de unos 5~ms, y el motivo es concreto.
+El reataque de la envolvente es suave, no baja a cero, así que al tocar una
+nota nueva mientras suena otra el salto de ganancia caería sobre una señal en
+marcha y se oiría como un chasquido.
+
+Toda modificación de la envolvente, incluido ese reataque, se aplaza a una
+bandera y se ejecuta dentro del callback de audio. La regla que se sigue en
+todo el firmware es que quien llama al procesado de un bloque es también quien
+lo modifica, porque las funciones de \texttt{DaisySP} no están pensadas para que
+se las reconfigure desde otro hilo mientras están procesando. El resto del
+estado compartido es de una sola palabra y el callback solo lo lee, así que una
+carrera deja el cambio como mucho un bloque tarde, un milisegundo, que es
+inaudible.
+
+Al final de la cadena hay una ganancia global fija de 0,8, subida desde 0,4 en
+el propio firmware en lugar de compensarla en el previo de la interfaz, porque
+amplificar aguas abajo sube señal y ruido por igual mientras que hacerlo aquí
+sube solo la señal. No hay riesgo de recorte, ya que la mezcla de la transición
+es una media ponderada y no añade ganancia.
+
+\section{Envolvente y filtro desde el panel}
+\label{sec:panel}
+
+Los siete canales del panel, cuatro para la envolvente, dos para el filtro y
+uno para el selector de tipo, se leen por el \gls{adc} de la placa, que
+\texttt{libDaisy} configura a 16 bits con sobremuestreo por 32 y entrega ya
+normalizado entre cero y uno \cite{libDaisy}. Los potenciómetros cuelgan de la
+alimentación analógica de 3,3~V y nunca del raíl de 5~V, porque el conversor
+referencia su fondo de escala a esa misma tensión y así cualquier deriva afecta
+por igual a referencia y señal, y se cancela. El montaje está en el
+capítulo~\ref{cap:hardware}.
+
+La lectura se hace una vez por bloque de audio, es decir a 1~kHz, y desde dentro
+del callback, por la misma razón de la sección anterior. Los siete canales pasan
+por un filtro de un polo con constante de tiempo de unos 30~ms, y eso es lo que
+elimina el ruido de escalera al barrer la frecuencia de corte. La
+Figura~\ref{fig:suavizado} enseña por qué. El conversor entrega un valor por
+bloque, así que un giro del mando no llega como una rampa sino como una
+escalera, y sin suavizar, cada peldaño se traduce en un salto de la frecuencia
+de corte que se oye como un crujido. Con el filtro, el salto por bloque es una
+fracción del error y el barrido suena continuo. Complementa, sin sustituirlos, a
+los condensadores de desacoplo de cada cursor, que atacan un problema distinto,
+el ruido que capta el cable.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=\textwidth]{suavizado.pdf}
+    \caption{A la izquierda, un giro rápido del mando de corte tal y como lo
+             entrega el conversor bloque a bloque, y el mismo giro tras el
+             filtro de un polo. A la derecha, el recorrido del mando llevado a
+             hercios con el mapeo exponencial y con uno lineal.}
+    \label{fig:suavizado}
+\end{figure}
+
+Los tiempos y la frecuencia de corte se mapean en escala exponencial, no
+lineal, porque el oído percibe ambas magnitudes de forma logarítmica. El panel
+derecho de la figura lo deja claro. Con mapeo lineal, tres cuartas partes del
+recorrido del mando quedarían por encima de 3~kHz y todo el registro grave se
+apelotonaría en el primer cuarto de giro. Los rangos son de 1~ms a 2~s para el
+ataque, de 5~ms a 2~s para el decaimiento, de 5~ms a 4~s para la liberación y
+de 30~Hz a 12~kHz para el corte. El sostenimiento es un nivel y no un tiempo,
+así que se mapea lineal. El techo de 12~kHz no es arbitrario, ya que el filtro
+empleado exige que su frecuencia de corte quede por debajo de un tercio de la
+frecuencia de muestreo \cite{DaisySP}, y 12~kHz deja margen sobrado sobre ese
+límite de 16~kHz estando ya fuera del rango en el que un paso bajo hace algo
+útil.
+
+Los cuatro parámetros de la envolvente solo se reescriben cuando el mando se ha
+movido de verdad, con un umbral del 0,2\,\% de su recorrido. Sus funciones de
+ajuste recalculan coeficientes con exponenciales, y llamarlas cuatro mil veces
+por segundo para reescribir el mismo valor es trabajo tirado. La frecuencia de
+corte y la resonancia sí se refrescan siempre, porque son las que se barren en
+vivo y las que tienen que sonar continuas.
+
+El filtro es un \gls{svf} de variables de estado con doble muestreo
+\cite{DaisySP}, colocado entre el oscilador y la envolvente, que es el orden
+clásico de la síntesis sustractiva descrito en el capítulo 2. La razón concreta de
+elegirlo frente a un filtro en escalera es que calcula sus cuatro salidas a la
+vez, de modo que ofrecer paso bajo, paso banda y paso alto por selector no
+cuesta ni un ciclo adicional de procesador. Basta con leer una salida u otra.
+
+La resonancia necesita compensación de ganancia. El pico del filtro en la
+frecuencia de corte vale aproximadamente la inversa de su factor de
+amortiguamiento, y ese factor tiende a cero conforme la resonancia sube
+\cite{DaisySP}, de manera que con la resonancia cerca del máximo el realce pasa
+de 20~dB. Es suficiente para saturar la salida en cuanto un armónico de la
+tabla cae cerca del corte. La corrección aplicada es cuadrática en la resonancia
+y neutra cuando esta vale cero, y esa neutralidad es deliberada, porque así con
+la resonancia al mínimo el nivel de salida es exactamente el calibrado y
+cualquier medida posterior de la cadena no se ve afectada por ella.
+
+El selector de tres posiciones se lee como un canal más del conversor, con tres
+tensiones que fija un divisor resistivo. La posición central no es un pin al
+aire, que flotaría y daría basura, sino que son esas resistencias las que la
+mantienen clavada a media escala. No hace falta antirrebote aparte porque la
+decisión se toma sobre el valor ya suavizado, y los 30~ms del filtro de control
+son exactamente eso.
+
+Aquí apareció un fallo que merece la pena dejar escrito, porque es de los que no
+avisan. El sentido del selector estaba invertido respecto a la serigrafía del
+panel, de forma que dos de las tres posiciones seleccionaban un filtro distinto
+del que anunciaban. Se corrigió el firmware y no la serigrafía, por la razón
+obvia de que la serigrafía no se recompila. Lo interesante es que no es un fallo
+que se detecte moviendo mandos a ver si algo suena, ya que los tres filtros
+suenan perfectamente, solo que ninguno donde pone el panel. De ahí salió la
+regla de verificar los siete canales uno a uno después de cada grabación.
+
+\section{El display}
+\label{sec:oled}
+
+El panel lleva una pantalla \gls{oled} de 128 por 64 puntos gobernada por un
+SSD1306 \cite{SSD1306}, conectada por \gls{iic}. La elección de pines no es
+libre y esconde una trampa, porque el mismo controlador de ese bus sale también
+por los pines que ocupa el USART1 del \gls{midi} \cite{DaisySeed}. Tomar el
+mapeo por defecto habría cableado el display justo encima de la entrada de
+notas.
+
+La presencia del display se comprueba en el arranque en lugar de darse por
+hecha. El controlador de \texttt{libDaisy} transmite de forma bloqueante y no
+devuelve error, así que una pantalla ausente o mal cableada no se manifestaría
+como un fallo sino como un arranque lentísimo y un bucle principal frenado en
+cada refresco. El sondeo envía el byte de control y la orden de apagar el
+display, y mira si hay reconocimiento en la dirección de esclavo del integrado
+\cite{SSD1306}. Si no contesta en 10~ms, el instrumento arranca sin pantalla y
+sigue sonando igual.
+
+El bus se configura a la más rápida de las tres velocidades que ofrece la
+biblioteca, que esta documenta como unos 886~kHz efectivos y no como el
+megahercio nominal \cite{libDaisy}. Cada refresco completo manda el kilobyte
+entero de la memoria de imagen y bloquea del orden de diez milisegundos, lo que
+obliga a ser cuidadoso con la cadencia. La rutina de dibujo compara lo que
+tendría que pintar con lo que ya está pintado y sale sin tocar el bus si no ha
+cambiado nada visible, de modo que tocando el teclado sin mover mandos el
+display no consume ni un ciclo. Los 80~ms del temporizador son un límite
+superior al refresco, no una cadencia fija.
+
+Lo que muestra es el mando que se está tocando, con su nombre en grande, el
+valor en unidades reales y una barra con la posición física del control; abajo,
+de forma permanente, el tipo de filtro. Con seis mandos y una pantalla de este
+tamaño, repartirla en seis casillas diminutas la habría dejado ilegible justo
+cuando hace falta leerla, que es mientras se gira un mando. El foco lo roba el
+último control movido más de un 1\,\% de su recorrido, y cada canal lleva su
+propia referencia, así que el ruido nunca acumula deriva suficiente para
+disparar el cambio. La barra aporta lo que el número no dice, que es cuánto
+recorrido queda, algo que en una escala exponencial no se deduce del valor.
+
+Que esta pantalla cuelgue del procesador de audio y no de la \gls{cyd}, que ya
+tiene una, lo decide el sentido del flujo de datos. La cadena es unidireccional
+y los mandos están en el extremo final, así que pintarlos en la \gls{cyd}
+habría exigido remontar los dos enlaces al revés, incluido el \gls{spi} del
+apartado~\ref{sec:emisor-spi}. Conectando el display donde ya viven esos datos
+no hace falta protocolo nuevo, y cada pantalla enseña lo suyo de forma
+permanente sin ninguna lógica de vuelta a una vista base.
+
+\section{Arranque, instrumentación y recursos}
+\label{sec:instrumentacion}
+
+Diagnosticar el primer arranque del montaje completo resultó imposible durante
+un buen rato por una carencia del propio firmware, que no imprimía nada al
+empezar. Un firmware colgado a mitad de la inicialización y uno vivo esperando
+entrada son indistinguibles por el puerto serie, porque los dos callan. La
+solución fue barata. Tres parpadeos del diodo al arrancar dan prueba de vida sin
+depender de un ordenador, una línea por fase de inicialización dice hasta dónde
+llegó el arranque si algo se cuelga, y un latido cada dos segundos con los
+contadores de cada subsistema distingue el instrumento vivo del muerto. Ese
+latido cuenta los eventos \gls{midi} de cualquier tipo, incluidos los que el
+firmware ignora, lo que separa dos preguntas que antes estaban mezcladas, a
+saber, si no llega ni un byte por el cable o si llega pero falla el tratamiento
+de las notas. El principio general es que un firmware que solo habla cuando todo
+va bien no se puede depurar.
+
+Los modos de validación se controlan con banderas de compilación y no con
+opciones en tiempo de ejecución, para separar limpiamente el modo de
+comprobación del uso normal. Una de ellas vuelca por el puerto serie las 1024
+muestras de cada tabla recibida, que es lo que alimenta la comparación del
+apartado~\ref{sec:emisor-spi}, y otra vuelca la tabla completa de notas y
+frecuencias. Las dos se dejan desactivadas en el instrumento, porque mil líneas
+por trama ahogarían cualquier otro mensaje. Ese puerto serie es un dispositivo
+\gls{cdc} sobre \gls{usb} que crea la propia biblioteca, y la placa se graba
+por ese mismo conector poniéndola en modo \gls{dfu}.
+
+Cuando la recepción de notas no funcionaba y el firmware completo era demasiado
+grande para razonar sobre él, se escribió aparte un programa mínimo que
+únicamente lee \gls{midi}, sin audio, sin tramas y sin envolvente. Sirvió para
+separar el firmware del hardware y demostrar que el problema no estaba en el
+código, y se conserva en el repositorio como herramienta de diagnóstico.
+
+En cuanto a recursos, el firmware ocupa el 85,9\,\% de los 128~kB de memoria de
+programa interna del microcontrolador, frente al 70,6\,\% que ocupaba antes de
+añadir el display. Los escalones anteriores fueron del 50,8\,\% con solo el
+motor de tabla, el 63,7\,\% al añadir el \gls{midi} y el 65,3\,\% al cerrar la
+cadena completa. El grueso del último salto son la fuente grande de la pantalla
+y las funciones de formateo de texto, así que esa fuente es el primer recorte
+disponible si alguna ampliación pidiera sitio. Conviene señalar que la placa
+dispone además de 8~MB de memoria de programa externa y 64~MB de memoria
+dinámica \cite{DaisySeed} que este firmware no llega a usar, de modo que el
+límite no es de la placa sino de la región interna contra la que se enlaza.
+
+Queda anotada una limitación conocida. Desconectar el cable \gls{usb} con el
+instrumento encendido detiene la recepción de notas hasta pulsar el botón de
+reinicio. La causa probable es que, con los mensajes de depuración activos, al
+desaparecer el ordenador el búfer del puerto serie se llena y el bucle principal
+deja de atender la entrada. No afecta al uso previsto, en el que el instrumento
+suena sin ordenador, pero conviene tenerlo presente.
+
+\section{Estado del subsistema}
+
+Con esto queda cerrado el camino que va de la trama a la señal analógica. El
+procesador de audio recibe la tabla por acceso directo a memoria, comprueba su
+integridad, la incorpora con una transición de 20~ms que no altera la fase, la
+recorre con un acumulador gobernado por la nota que llega por \gls{midi}, la
+pasa por el filtro y la envolvente que gobiernan los mandos del panel y la
+entrega por el \gls{dac} de su códec, que recibe las muestras por un bus serie
+de audio \gls{iis} en formato de 24 bits alineado a la izquierda
+\cite{DaisySeed}. La salida es de nivel de línea con impedancia de 100~$\Omega$.
+
+Las tres placas quedan así descritas por completo. Lo que falta es el soporte
+físico que las sostiene y las alimenta, que es el asunto del capítulo siguiente,
+y las medidas que verifican todo el conjunto, que se recogen juntas en el
+capítulo~\ref{cap:pruebas}.
