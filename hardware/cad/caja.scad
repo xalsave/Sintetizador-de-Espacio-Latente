@@ -34,7 +34,7 @@ part = "conjunto";   // [bandeja, trasera_carcasa, trasera_suelo, conjunto, cone
 /* [2. Caja] */
 box_w    = 186;    // = ancho del panel
 panel_d  = 116;    // = fondo del panel (medido sobre la pendiente)
-h_front  = 30;     // altura de la pared delantera
+h_front  = 44;     // altura de la pared delantera
 h_back   = 62;     // altura de la pared trasera
 // Fondo de la bahia trasera, por detras del panel.
 // El video del 24 ago demostro que el shield va TUMBADO, no de pie: sus DIN
@@ -55,7 +55,7 @@ floor_t  = 3;      // espesor del suelo
 panel_t  = 3.4;    // debe coincidir con panel.scad
 
 /* [3. Veroboard] */
-board_w  = 160;  board_h = 100;   // 160 a lo largo de X, 100 a lo largo de Y
+board_w  = 166;  board_h = 100;   // 166 a lo largo de X, 100 a lo largo de Y
 board_x0 = 13;   board_y0 = 5;    // esquina delantera izquierda
 board_t  = 1.5;                   // espesor de la baquelita
 rail_z   = 8;                     // cara inferior de la placa sobre el suelo
@@ -100,7 +100,7 @@ board_side_gap = 0.5;  // aire lateral por cada lado, entre canto y pilar
 socket_side    = "right"; // [left, right]  canto donde vive el zocalo de 22
                           // "right" = x = board_x0 + board_w
 tab_len_socket = 40;      // el canto limpio son 42; se dejan 2 de margen
-tab_over = 3.5;   // cuanto pisa la pinza sobre la placa
+tab_over = 4.0;   // cuanto pisa la pinza sobre la placa
 tab_t    = 2;     // espesor de la pinza
 tab_gap  = 0.8;   // aire entre la cara de componentes y la pinza. Generoso a
                   // proposito: la cara baja de la pinza es un voladizo de
@@ -125,7 +125,7 @@ din_clear = 0.6;
 din_pitch = 22.0;        // 19,5 de cuerpo + 2,5 de aire, centro a centro
 din_count = 2;           // IN y OUT, UNO AL LADO DEL OTRO en horizontal
 din_z_over_pcb = 9.75;   // centro del DIN sobre la cara superior de la PCB
-shield_floor_gap = 3;    // aire entre la punta de los pines y el suelo
+shield_floor_gap = 12;    // aire entre la punta de los pines y el suelo
 
 // !! PENDIENTE DE MEDIR -- estos tres son estimaciones, no medidas:
 shield_w = 53.1;   // canto que apoya contra la trasera (57,4 o 53,1?)
@@ -211,7 +211,7 @@ function join_y() = split_y - join_foot_len/2;   // centro del pie y su tornillo
 join_free = 3.8;  pad_h = 9;
 // Alojamiento de la cabeza en la cara inferior del suelo, para que no
 // sobresalga y la caja apoye plana.
-join_head_d    = 6.6;    // diametro del hueco de la cabeza
+join_head_d    = 5.4;    // diametro del hueco de la cabeza
 join_head_deep = 2.6;    // profundidad
 // TUERCAS EMBUTIDAS, no rosca en el plastico: el PLA aguanta tres montajes y
 // al cuarto gira en vacio, y ademas el apriete depende de la tolerancia de
@@ -252,14 +252,14 @@ sj_wall_hole_d  = 3.8;    // el mismo agujero, pero en el lateral de la
 // lateral, sin soportes, con chaflan de arranque a 45 grados.
 side_join       = true;
 side_block_w    = 10;    // cuanto entra el bloque hacia dentro desde la pared
-side_block_len  = 20;    // largo total en Y (parte asoma delante de split_y)
-side_block_over = 8;     // cuanto asoma por delante de la particion
-side_block_z0   = 28;    // cara inferior del bloque
+side_block_len  = 24;    // largo total en Y (parte asoma delante de split_y)
+side_block_over = 12;     // cuanto asoma por delante de la particion
+side_block_z0   = 24;    // cara inferior del bloque
 side_block_h    = 12;    // alto
 side_hole_d     = 3.8;   // taladro del bloque
 side_wall_hole_d = 3.8;  // taladro en la pared de la bandeja (mas holgura)
-side_hole_y     = 116;   // posicion Y del tornillo (en el tramo que asoma)
-side_hole_z     = 34;    // altura del tornillo
+side_hole_y     = 112;   // posicion Y del tornillo (en el tramo que asoma)
+side_hole_z     = 30;    // altura del tornillo
 side_tri_rot    = 0;     // giro del triangulo alrededor de su arista de pared
                          // (grados; por si la orientacion no cae bien)
 side_tri_len    = 10;    // cuanto se extiende el triangulo hacia los
@@ -281,7 +281,7 @@ panel_screw_free = 3.6;   // taladro de paso del tornillo del panel en las
 // entre recto. Como esa cabeza va inclinada, se hace mas gruesa que el cuerpo
 // para que el taladro no se salga por el costado.
 boss_head_d   = 13;   // diametro de la cabeza inclinada
-boss_head_h   = 14;   // cuanto baja la cabeza desde el plano de apoyo
+boss_head_h   = 12;   // cuanto baja la cabeza desde el plano de apoyo
 boss_nut_deep = 16;    // a que profundidad queda la cara alta de la tuerca
 boss_slot_ext = 8;    // ranura para meter la tuerca de lado
 gusset_w  = 9;        // cuanto sale la cartela desde el lateral
