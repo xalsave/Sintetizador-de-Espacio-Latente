@@ -25,7 +25,7 @@ SEPARACION = 3.75
 X0 = [2 + i * (ANCHO + SEPARACION) for i in range(5)]
 
 OFFLINE = [
-    ("Corpus AKWF", "≈4000 ondas"),
+    ("Dataset AKWF", "≈4000 ondas"),
     ("Preprocesado", "1024 muestras,\nfase alineada"),
     ("Entrenamiento", "del VAE"),
     ("Decodificación", "de la rejilla\n16×16"),
