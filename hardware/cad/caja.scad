@@ -211,7 +211,7 @@ function join_y() = split_y - join_foot_len/2;   // centro del pie y su tornillo
 join_free = 3.8;  pad_h = 9;
 // Alojamiento de la cabeza en la cara inferior del suelo, para que no
 // sobresalga y la caja apoye plana.
-join_head_d    = 5.4;    // diametro del hueco de la cabeza
+join_head_d    = 4.8;    // diametro del hueco de la cabeza
 join_head_deep = 2.6;    // profundidad
 // TUERCAS EMBUTIDAS, no rosca en el plastico: el PLA aguanta tres montajes y
 // al cuarto gira en vacio, y ademas el apriete depende de la tolerancia de
