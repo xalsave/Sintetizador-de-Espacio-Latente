@@ -125,20 +125,6 @@ $i = \lfloor \varphi \rfloor$ y $\alpha = \varphi - i$ es la parte fraccionaria.
 s[n] = (1-\alpha) \cdot T[i] + \alpha \cdot T[(i+1) \bmod N]
 \end{equation}
 
-La Figura~\ref{fig:wavetable} ilustra el proceso completo. El acumulador señala
-una posición fraccionaria dentro de la tabla y el valor de salida se obtiene
-pesando las dos muestras que lo rodean.
-
-\begin{figure}[htbp]
-    \centering
-    \includegraphics[width=\textwidth]{wavetable.pdf}
-    \caption{Lectura de una tabla de ondas. A la izquierda, la tabla almacenada y
-             la posición actual del acumulador de fase $\varphi$. A la derecha,
-             el detalle de la interpolación lineal entre las dos muestras
-             vecinas.}
-    \label{fig:wavetable}
-\end{figure}
-
 El coste de generar una muestra se reduce así a una suma, dos multiplicaciones y
 un acceso a memoria, lo que hace la técnica especialmente adecuada para
 microcontroladores. Bristow-Johnson señala además que, para tonos musicales
@@ -147,6 +133,20 @@ exigiendo mucho menos cálculo en tiempo real \cite{BristowJohnson1996}, que es
 justo el compromiso que interesa en un sistema embebido. A cambio, el timbre
 queda fijado por el contenido de la tabla, de modo que cambiar de sonido implica
 cambiar de tabla.
+
+La Figura~\ref{fig:wavetable} ilustra el proceso completo. El acumulador señala
+una posición fraccionaria dentro de la tabla y el valor de salida se obtiene
+pesando las dos muestras que lo rodean.
+
+\begin{figure}[hbp]
+    \centering
+    \includegraphics[width=\textwidth]{wavetable.pdf}
+    \caption{Lectura de una tabla de ondas. A la izquierda, la tabla almacenada y
+             la posición actual del acumulador de fase $\varphi$. A la derecha,
+             el detalle de la interpolación lineal entre las dos muestras
+             vecinas.}
+    \label{fig:wavetable}
+\end{figure}
 
 \subsection{Aliasing y limitación de banda}
 
@@ -179,33 +179,32 @@ situadas cerca unas de otras en un espacio. Es lo denominado el espacio latente.
 El interés de esta arquitectura no está en la reconstrucción en sí, que sería
 trivial si no se impusiera ninguna restricción, sino en el cuello de botella. Al
 obligar a que toda la información pase por un número reducido de valores, la red
-se ve forzada a descartar lo accesorio y quedarse con los rasgos que de verdad
+se ve forzada quedarse con los rasgos que de verdad
 distinguen unas entradas de otras. Aplicado a un conjunto de formas de onda, el
 codificador acaba situando cerca las que comparten características espectrales,
-sin que se le haya indicado en ningún momento qué es un armónico.
+sin que se le haya indicado en ningún momento qué es un armónico o qué es un timbre.
 
 \subsection{El autoencoder variacional}
 
 Un autoencoder convencional organiza el espacio latente sin ninguna garantía
-sobre su estructura. Nada impide que queden zonas vacías entre los puntos
-ocupados, y un punto tomado de una de esas zonas puede decodificarse en algo sin
+sobre su estructura. Nada impide que queden zonas vacías en este espacio. 
+Un punto tomado de una de esas zonas puede decodificarse en algo sin
 sentido. Para el uso que se pretende aquí, en el que el usuario recorre el plano
 con el dedo y pasa continuamente por posiciones que no corresponden a ninguna
-onda del conjunto de entrenamiento, esa falta de garantías es un problema.
+onda del conjunto de entrenamiento, esa falta de predictibilidad es un problema.
 
 El autoencoder variacional o \gls{vae} \cite{Kingma2013} resuelve esa limitación
-cambiando la naturaleza del código. En lugar de producir un vector de valores
+cambiando la naturaleza del vector latente. En lugar de producir un vector de valores
 concretos, el codificador produce los parámetros de una distribución de
 probabilidad, es decir, un vector de medias $\boldsymbol{\mu}$ y otro de
-varianzas $\boldsymbol{\sigma}^2$. El código que recibe el decodificador se
-obtiene muestreando esa distribución. Ese muestreo plantea un problema, porque
-una operación aleatoria no es derivable y el gradiente no puede atravesarla
-durante el entrenamiento. La solución que proponen Kingma y Welling es
-reescribir la variable latente como una transformación determinista de la media
-y la desviación típica sobre una muestra de ruido tomada aparte, tal como recoge
-la Ecuación~\eqref{eq:reparam}. Con esa reformulación, conocida como truco de
-reparametrización, la aleatoriedad queda confinada en un término que no depende
-de los parámetros de la red, y el gradiente sí puede propagarse.
+varianzas $\boldsymbol{\sigma}^2$. Así pues, el vector latente que recibe el decodificador se
+obtiene muestreando esa distribución. El problema de este muestreo es que, al ser
+una operación aleatoria, no es derivable y bloquea la propagación del gradiente durante 
+el entrenamiento. Para solucionarlo, Kingma y Welling proponen el truco de reparametrización 
+(Ecuación~\eqref{eq:reparam}). El vector latente se expresa como una función 
+determinista de la media y la desviación típica, utilizando una muestra de ruido 
+externa. De este modo, la aleatoriedad queda aislada en un término independiente 
+de la red y el gradiente puede propagarse sin impedimentos.
 
 \begin{equation}
 \label{eq:reparam}
@@ -213,12 +212,14 @@ de los parámetros de la red, y el gradiente sí puede propagarse.
 \qquad \boldsymbol{\epsilon} \sim \mathcal{N}(\mathbf{0}, \mathbf{I})
 \end{equation}
 
-A la función de pérdida se le añade además un segundo término que penaliza la
-divergencia de Kullback-Leibler entre la distribución producida por el
-codificador y una normal estándar. Ese término tira de todas las
-distribuciones hacia el mismo punto del espacio, con lo que las zonas ocupadas
-se solapan y no quedan huecos. La pérdida total combina entonces el error de
-reconstrucción y esa divergencia, como indica la Ecuación~\eqref{eq:vaeloss}.
+Para evitar que el espacio latente quede lleno de huecos vacíos, a la
+función de pérdida se le añade un segundo término: la divergencia de
+Kullback-Leibler. Esta métrica compara la distribución del codificador
+con una normal estándar y actúa como un imán, obligando a todas las
+nubes de probabilidad a agruparse y solaparse ordenadamente en torno
+al centro. Así, la pérdida total equilibra la fidelidad de la
+reconstrucción con este requisito de regularidad, tal como muestra la
+Ecuación~\eqref{eq:vaeloss}.
 
 \begin{equation}
 \label{eq:vaeloss}
@@ -235,26 +236,34 @@ D_{KL} = -\frac{1}{2} \sum_{j=1}^{d} \left( 1 + \log \sigma_j^2 - \mu_j^2 - \sig
 \end{equation}
 
 El factor $\beta$ que aparece en la Ecuación~\eqref{eq:vaeloss} pondera la
-importancia relativa de los dos términos y da nombre a la variante conocida como
+importancia relativa de ambos términos y da nombre a la variante conocida como
 $\beta$-VAE \cite{Higgins2017}. Higgins y sus coautores lo introducen como un
-hiperparámetro que regula el equilibrio entre la capacidad del canal latente y
-la precisión de la reconstrucción, y observan que valores mayores que la unidad
-empujan al modelo hacia representaciones más ordenadas a costa de reconstruir
-peor. Su ajuste supone entonces un compromiso. Valores altos producen un espacio
-latente muy regular pero reconstrucciones pobres, porque el modelo prioriza
-acercar todas las distribuciones a la normal estándar sobre reproducir fielmente
-cada entrada. Valores bajos mejoran la reconstrucción a costa de un espacio
-menos continuo.
+hiperparámetro ajustable que equilibra la capacidad del canal latente frente a la
+precisión de la reconstrucción, y con valores por encima de la unidad obtienen
+representaciones \emph{factorizadas}, en las que cada dimensión del espacio
+recoge un único factor de variación de los datos y puede moverse sin alterar el
+resto. Sobre imágenes de caras, por ejemplo, una dimensión gobierna el giro de la
+cabeza y otra la anchura de la sonrisa.
 
-Existe además un caso degenerado, conocido como colapso posterior, en el que el
-modelo opta por ignorar el latente por completo y el término de divergencia se
-anula. Bowman y sus coautores se encontraron con este comportamiento al aplicar
-un autoencoder variacional a texto, y lo resolvieron introduciendo el peso de la
-divergencia de forma progresiva. Durante las primeras épocas el término se anula
-o se mantiene muy bajo, de modo que el modelo se centra en aprender a
-reconstruir, y solo después se sube hasta su valor definitivo
-\cite{Bowman2016}. Es la misma técnica que se ha empleado en este trabajo, tal
-como se detalla en el capítulo~\ref{cap:ml}.
+Conviene no confundir esa propiedad con la continuidad, que es la que interesa
+aquí y que aporta el término de divergencia en cualquier autoencoder variacional.
+Lo que $\beta$ regula es cuánto pesa la regularización frente a la fidelidad de la
+reconstrucción. Valores altos dan un espacio muy regular a costa de
+reconstrucciones pobres, porque el modelo prioriza acercar todas las
+distribuciones a la normal estándar antes que reproducir cada entrada con
+detalle; valores bajos hacen lo contrario. El compromiso adoptado en este trabajo
+se justifica en el capítulo~\ref{cap:ml}.
+
+Un fallo habitual en estos modelos es el conocido como colapso posterior.
+Ocurre cuando la red ignora por completo el espacio latente y el término 
+de divergencia se anula. Este fallo fue observado por Bowman y sus 
+coautores \cite{Bowman2016} al aplicar VAEs a texto. Esto pasa porque 
+el decodificador es lo suficientemente potente como para reconstruir los 
+datos por su cuenta, sin necesitar ayuda del espacio latente. Para solucionarlo, 
+en este trabajo se ha aplicado su misma técnica: introducir el peso de la 
+divergencia de forma progresiva. Así, durante las primeras épocas el modelo
+se centra solo en aprender a reconstruir, y el peso se va subiendo poco a poco
+hasta su valor definitivo, tal como se explica en el capítulo~\ref{cap:ml}.
 
 \section{Estado del arte}
 
@@ -272,36 +281,37 @@ sobre cómo se genera el sonido queda incorporado a la arquitectura en lugar de
 tener que aprenderse desde cero. RAVE \cite{Caillon2021} sigue una vía
 diferente. Se trata de un autoencoder variacional entrenado sobre audio en
 bruto, con un procedimiento de entrenamiento en dos fases, primero de
-aprendizaje de la representación y después de ajuste adversario. Caillon y
-Esling añaden un análisis posterior del espacio latente que permite decidir el
-compromiso entre fidelidad de reconstrucción y compacidad de la representación,
-un problema que aparece de nuevo en este trabajo al fijar la dimensión del
-latente. Su interés para este trabajo es que demuestra
-que la síntesis neuronal puede alcanzar velocidades de tiempo real, aunque sobre
+aprendizaje de la representación y después de ajuste adversario. Sus autores, Caillon y
+Esling, añaden un análisis posterior del espacio latente que permite decidir el
+compromiso entre fidelidad de reconstrucción y compacidad de la representación.
+Es un problema que aparece de nuevo en este trabajo al fijar la dimensión del
+latente. Su interés para este trabajo es que demuestra que la síntesis neuronal 
+puede alcanzar velocidades de tiempo real, aunque sobre
 hardware sensiblemente más potente que un microcontrolador.
 
 \subsection{Modelos que generan tablas de onda}
 
 El segundo grupo, más cercano a lo que se plantea aquí, no genera audio sino
 tablas. La red produce una forma de onda de un ciclo que después se reproduce
-mediante un oscilador convencional, con lo que el coste de la inferencia queda
-desacoplado de la frecuencia de muestreo.
+mediante un oscilador convencional, con lo que la carga computacional no 
+depende de la frecuencia de muestreo.
 
 El trabajo de Hantrakul y Yang \cite{Hantrakul2018} es el precedente más
 directo. Reutilizan el modelo NSynth WaveNet ya entrenado como autoencoder de
-tablas, generando formas de onda de 512 muestras e interpolando entre ellas en
+tablas para generar formas de onda de 512 muestras e interpolar entre ellas en
 el espacio latente. El resultado se distribuye como \emph{plugin} VST/AU para
 estación de trabajo de audio digital.
 
-Dos observaciones suyas resultan especialmente pertinentes aquí. La primera es
+Dos observaciones suyas resultan especialmente importantes aquí. La primera es
 de coste. Los propios autores miden unos 4 segundos para codificar y unos 7 para
 decodificar una única forma de onda sobre una máquina con GPU, lo que descarta
 por completo ejecutar la red durante la reproducción. Su solución fue generar
 por adelantado 300 tablas interpolando entre combinaciones de seno, sierra y
 triangular, y reproducirlas después con un oscilador convencional. Es exactamente
-la misma estrategia que se adopta en este trabajo, y conviene subrayar que allí
-la limitación aparece ya sobre una GPU de sobremesa, no sobre un
-microcontrolador.
+la misma estrategia que se adopta en este trabajo. Conviene subrayar que 
+la limitación aparece ya sobre una GPU de sobremesa. Al trabajar sobre 
+microcontroladores de bajo coste, la limitación es aún más severa y
+obliga a generar las tablas de forma anticipada.
 
 La segunda observación tiene que ver con la estructura del espacio latente.
 Hantrakul y Yang comprueban que interpolar a lo largo del segmento que une dos
@@ -309,26 +319,24 @@ vectores del espacio produce mezclas utilizables de las dos ondas de partida,
 pero que apartarse de ese segmento genera ruido. Dicho de otro modo, en su
 modelo no todo el espacio latente es válido, solo lo son las trayectorias entre
 puntos conocidos. Para un instrumento en el que el usuario recorre libremente un
-plano con el dedo esa garantía no basta, y es una de las razones que justifican
-emplear aquí un autoencoder variacional en lugar de uno convencional. Los
+plano con el dedo esa limitación es un problema. Esta es una de las razones que justifican
+emplear en este proyecto un autoencoder variacional en lugar de uno convencional. Los
 propios autores apuntan en esa dirección al plantear como trabajo futuro un
 modelo ligero basado precisamente en un autoencoder variacional.
 
 Kreković \cite{Krekovic2021} plantea un oscilador basado en un autoencoder y
 estudia el efecto del conjunto de entrenamiento y de los hiperparámetros sobre
-la variedad de las formas de onda generadas. Su aportación más pertinente aquí
-es la constatación de que emplear las variables latentes directamente como
-parámetros de entrada produce una transición suave entre las ondas generadas
-cuando los cambios de esos parámetros son pequeños. Es exactamente la propiedad
-sobre la que descansa el control táctil de este instrumento.
+la variedad de las formas de onda generadas. Su conclusión fue que emplear las 
+variables latentes directamente como parámetros de entrada produce una transición 
+suave entre las ondas generadas cuando los cambios de esos parámetros son pequeños.
+Es exactamente la propiedad sobre la que descansa el control táctil de este instrumento.
 
 Más recientemente, Wavespace \cite{Lee2024} propone un generador de tablas
-basado en un autoencoder variacional cuyo espacio latente se factoriza por
-completo en subespacios asociados a distintos estilos de forma de onda. El
-generador se condiciona además con descriptores tímbricos y morfológicos, de
-modo que el usuario puede manipular cada subespacio de forma independiente en
-lugar de moverse por un plano indiferenciado. Los autores lo prototipan también
-como \emph{plugin} de oscilador para estación de trabajo de audio digital, y
+basado en un autoencoder variacional cuyo espacio latente se divide en subespacios 
+asociados a distintos estilos de forma de onda. El generador se condiciona además 
+con descriptores tímbricos y morfológicos, de modo que el usuario puede manipular 
+cada subespacio de forma independiente en lugar de moverse por un plano indiferenciado.
+Los autores lo prototipan también como \emph{plugin} de oscilador para estación de trabajo de audio digital, y
 señalan que la restricción de velocidad de cálculo sigue siendo el principal
 obstáculo cuando se pretende decodificar una forma de onda para cada bloque de
 audio.
