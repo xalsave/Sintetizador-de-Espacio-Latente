@@ -24,6 +24,7 @@ especificación MIDI y las dos bibliotecas de la plataforma Daisy).
 | `MIDI 1.0 Detailed Specification v4.2.1 (MMA).pdf` | `MIDI1` | 31,25 kbaud ±1 %, asíncrono, 10 bits por byte y LSB primero; lazo de corriente de 5 mA con optoacoplador obligatorio, y **la propia norma nombra el 6N138** como aceptable; do central = nota 60; Note On con velocity 0 equivale a Note Off, y por qué (running status) (§6.4) |
 | `libDaisy v5.4.0+22 (commit 85172e2b, Electrosmith).zip` | `libDaisy` | Recepción SPI por DMA con NSS por hardware; `MidiUartHandler` fija 31 250 baudios y recibe por DMA en su propio búfer; ADC1 a 16 bits con sobremuestreo x32 y `GetFloat()` dividiendo por 65536; las tres velocidades de I2C y la nota de los 886 kHz reales; 48 kHz por defecto (capítulo 6) |
 | `DaisySP V1.0.0 (Electrosmith).zip` | `DaisySP` | `Adsr`; `Svf` doble-muestreado acreditado a Andrew Simper, con las cuatro salidas calculadas a la vez, límite `f < sr/3` y `damp = 2(1-Q^0,25)`, de donde sale la compensación de ganancia de resonancia (§6.5) |
+| `6N138 Datasheet Rev 1.6 (Vishay Semiconductors).pdf` | `Vishay6N138` | Los parámetros garantizados del optoacoplador —relación de transferencia de corriente mínima del 300 % y tensión de salida en nivel bajo por debajo de 0,4 V— están **especificados con VCC = 4,5 V**, que es la tensión más baja a la que la hoja compromete algo; el máximo absoluto del 6N138 son −0,5 a +7 V. Es lo que sostiene que ningún elemento en serie pueda ir en el raíl común (§7.2). Aporta además el aislamiento de 5300 V_RMS y los 60 mA de corriente de salida |
 
 ## Notas
 
@@ -31,13 +32,17 @@ especificación MIDI y las dos bibliotecas de la plataforma Daisy).
   documentación es comunitaria, así que ese repositorio se cita como recurso
   web y nunca como hoja de características. No confundirlo con las tres
   primeras entradas, que sí son documentos oficiales del fabricante del chip.
-- **Falta por descargar**, si el capítulo 7 acaba citándola: la hoja del
-  **6N138**. No se descargó para el capítulo 6 a propósito, porque la
+- **La hoja del 6N138 ya está descargada** (28 ago 2026), al escribir el
+  capítulo 7. Se había dejado fuera del capítulo 6 a propósito, porque la
   especificación MIDI ya sostiene el aislamiento óptico y hasta nombra ese
-  componente; el dato de los 4,5 V mínimos de alimentación del optoacoplador
-  es eléctrico y pertenece al capítulo de hardware. Tampoco se descargó la
-  del **PCM3060**: el códec lo configura el hardware de la placa y no se
-  toca desde el código.
+  componente. **Ojo con lo que dice y lo que no**: no tiene tabla de
+  condiciones recomendadas, así que **no existe un «mínimo de 4,5 V» como
+  tal**. Lo que hay es que sus parámetros garantizados están especificados
+  con VCC = 4,5 V, y esa es la forma correcta de escribirlo. La nota de
+  `PROJECT.md` y de `alimentacion.md` que habla de «los 4,5 V mínimos» es
+  una regla de proyecto, razonable pero no literal del fabricante.
+  Sigue sin descargarse la del **PCM3060**: el códec lo configura el
+  hardware de la placa y no se toca desde el código.
 - Los dos PDF de Espressif se bajaron de `documentation.espressif.com`, que es
   el sitio oficial. El del XPT2046 no lo publica el fabricante en abierto y se
   tomó de un distribuidor (Grobotronics); la portada dice «XPT2046 Data Sheet,
@@ -87,3 +92,18 @@ propósito. El árbol que compila el firmware está 22 commits por delante de
 comprimido de esa revisión exacta, no el de la etiqueta, siguiendo el mismo
 criterio que con la librería del táctil: se cita lo que está compilado y
 flasheado. `DaisySP` sí está exactamente en la etiqueta `V1.0.0`.
+
+
+## Procedencia de la fuente del capítulo 7 (anotado el 28 ago 2026)
+
+- **6N138.** `vishay.com/docs/83605/6n138.pdf` devuelve un envoltorio HTML, no
+  el PDF, incluso con cabecera de navegador y `Referer`. El documento íntegro
+  se tomó del espejo de Farnell (`farnell.com/datasheets/2046454.pdf`), que
+  sirve la hoja oficial de Vishay tal cual: **Rev. 1.6, 23 de enero de 2015,
+  Document Number 83605**, 11 páginas. La entrada de `referencias.bib` cita a
+  Vishay Semiconductors, que es el editor real. Mismo caso que el STM32H750 y
+  la especificación MIDI.
+- **El shield MIDI es un módulo genérico** y no consta de qué fabricante es su
+  6N138 concreto. Se cita la hoja de Vishay porque es el documento de
+  referencia de ese componente; los datos empleados (tensión de especificación y
+  máximo absoluto) son comunes a los distintos fabricantes que lo sirven.

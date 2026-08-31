@@ -1,2 +1,419 @@
 \chapter{Hardware y alimentación}
 \label{cap:hardware}
+
+Los tres capítulos anteriores describen qué hace cada placa. Este describe lo
+que las sostiene, es decir, de dónde sale la energía y cómo se reparte, sobre
+qué van montadas, cómo llegan hasta ellas los mandos que el usuario toca y qué
+las encierra. Es la parte del trabajo que no se puede recompilar, y esa es la razón
+de que casi todas sus decisiones se tomaran por escrito antes de coger el
+soldador. El reparto de tareas entre placas está en el
+capítulo~\ref{cap:diseno}, la lectura de los canales del panel en el
+apartado~\ref{sec:panel} y el circuito de entrada de notas, del que aquí se
+trata la parte eléctrica, en el apartado~\ref{sec:midi}.
+
+\section{Componentes y equipos}
+\label{sec:materiales}
+
+La Tabla~\ref{tab:materiales} recoge lo que compone el instrumento. Conviene
+señalar que no hay en ella ninguna pieza fabricada a medida salvo las tres de
+plástico, en línea con el condicionante de partida del
+apartado~\ref{sec:requisitos}: todo son módulos y componentes de catálogo. El
+banco de trabajo se reduce a una impresora de filamento con cama de
+220$\times$220~mm, una fuente de laboratorio con límite de corriente y un
+multímetro. Los importes se recogen aparte, en el anexo de presupuesto.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Materiales y equipos del instrumento.}
+    \label{tab:materiales}
+    \begin{tabular}{llc}
+        \toprule
+        \textbf{Bloque} & \textbf{Componente} & \textbf{Cant.} \\
+        \midrule
+        Módulos
+          & CYD ESP32-2432S028R, pantalla táctil de 2,8 pulgadas & 1 \\
+          & ESP32-S3 N16R8 & 1 \\
+          & Daisy Seed Rev 7 & 1 \\
+          & Shield MIDI con optoacoplador 6N138 & 1 \\
+        \midrule
+        Alimentación
+          & Alimentador 230~V a 5~V / 3~A, centro positivo & 1 \\
+          & Condensadores: 470~µF, 100~µF y 100~nF & 1 / 2 / 8 \\
+          & Resistencia 3,3~$\Omega$ 1~W fusible y diodo 1N5817 & 1 / 1 \\
+        \midrule
+        Panel
+          & Potenciómetro lineal 10~k$\Omega$, rosca M7$\times$0,75 & 6 \\
+          & Conmutador ON-OFF-ON y sus dos 10~k$\Omega$ & 1 / 2 \\
+          & Pantalla \gls{oled} de 0,96 pulgadas, SSD1306 & 1 \\
+          & Jack de 3,5~mm mono, cuerpo de plástico & 1 \\
+          & Conector de alimentación de 2,1~mm e interruptor de red & 2 \\
+        \midrule
+        Soporte
+          & Placa perforada de tiras, 100$\times$160~mm, baquelita & 1 \\
+          & Tira de pines hembra de 2,54~mm & 4 \\
+          & Cable de silicona 24~AWG, filamento PLA y tornillería M3 & --- \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+El teclado que aporta las notas no figura en la tabla. Por la decisión del
+apartado~\ref{sec:arquitectura} es un aparato aparte, con su propia
+alimentación, y el instrumento funciona con cualquier controlador \gls{midi}.
+
+\section{La alimentación}
+\label{sec:alimentacion}
+
+Todo el conjunto cuelga de un único raíl de 5~V, y cada placa regula
+internamente sus propios 3,3~V. La Figura~\ref{fig:alimentacion} recoge el
+reparto completo.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.92\textwidth]{alimentacion.pdf}
+    \caption{Reparto de la alimentación. El condensador de reserva queda aguas
+             arriba del corte del raíl y el interruptor aguas abajo. La rama
+             del procesador de audio es la única con elemento en serie. Las
+             tensiones son las medidas en banco.}
+    \label{fig:alimentacion}
+\end{figure}
+
+Esa decisión tiene un efecto colateral que resultó más importante que el ahorro
+de fuentes, y es que las masas de las tres placas quedan unidas de forma
+permanente, cosa que el \gls{uart}, el \gls{spi} y el \gls{midi} necesitan y
+que antes dependía de no soltar un cable. El consumo del conjunto ronda los
+600~mA, así que un alimentador de 3~A deja margen para el arranque de la
+retroiluminación, y va fuera de la carcasa, con lo que dentro no hay tensión de red en
+ningún punto.
+
+\subsection{Quién fija el mínimo del raíl}
+
+El consumidor más exigente no es ninguno de los tres microcontroladores, sino
+el optoacoplador de la entrada de notas. La hoja del 6N138 especifica sus
+parámetros garantizados —relación de transferencia de corriente de al menos el
+300\,\% y tensión de salida en nivel bajo por debajo de 0,4~V— con una
+alimentación de 4,5~V, que es la más baja a la que el fabricante compromete
+nada, y fija su máximo absoluto en 7~V \cite{Vishay6N138}. Alimentarlo del raíl
+de 5~V lo deja dentro de un margen estrecho por los dos lados.
+
+De ahí sale la regla que gobierna el resto del apartado, y es que en el raíl
+común no puede haber ningún elemento en serie, porque cualquier caída que se
+introduzca ahí se la come también el optoacoplador. El primer diseño del
+filtrado ponía una resistencia en serie con toda la alimentación y se descartó
+por eso, y además porque con la corriente del conjunto habría disipado más de
+un vatio en un cuerpo de un cuarto. Medido sobre el montaje, el shield recibe
+4,91~V con todo encendido, y el raíl en vacío da 4,993~V.
+
+\subsection{El arranque, que resultó no ser un problema de nivel}
+
+Al dar tensión por primera vez, la \gls{cyd} y el procesador de control
+arrancaban de forma intermitente y a menudo había que pulsar el botón de
+reinicio. La explicación cómoda era que les faltaba tensión, y resultó ser
+falsa, porque el problema no era el nivel sino la pendiente, porque la fuente sube
+despacio y durante esa rampa las placas pasan un tiempo largo en la zona en la
+que su circuito de reinicio no sabe decidir.
+
+El arreglo es el que muestra la figura. El condensador de reserva de 470~µF, con
+su cerámico de 100~nF en paralelo, se coloca aguas arriba y el interruptor
+aguas abajo, de modo que al cerrar el interruptor el condensador ya está
+cargado y las dos placas ven un flanco rápido en lugar de una rampa. Con esa
+disposición arrancaron cinco veces de cinco sin tocar el botón de reinicio,
+incluso con la tensión de entrada del procesador de audio por debajo de lo que
+pide su fabricante. Eso zanja la cuestión, era la rampa.
+
+Para que esto sea posible el raíl de 5~V deja de ser una tira continua y se
+corta en un punto, con los dos extremos subiendo al interruptor del panel. El
+corte tiene que quedar aguas arriba de todas las cargas, y eso —no la
+estética— es lo que llevó la sección de alimentación al extremo libre de la
+placa. El raíl de masa, en cambio, no se interrumpe nunca, porque cortarlo obligaría a
+las corrientes de retorno a buscar camino por los cables de datos.
+
+\subsection{El filtro de la rama de audio}
+
+El raíl lo comparten la retroiluminación de la pantalla y dos
+microcontroladores conmutando, y ese ruido acaba en la sección analógica del
+procesador de audio y sale por el jack. La rama que lo alimenta lleva por eso
+una célula RC que las demás no necesitan, formada por una resistencia de
+3,3~$\Omega$ y 1~W en serie con 100~µF a cada lado, lo que sitúa el codo en
+482~Hz. Se completa con un cerámico de 100~nF entre las patillas de entrada y
+de masa, que son adyacentes, para cubrir la parte alta del espectro que el
+electrolítico ya no ve. La resistencia medida sobre el montaje da
+3,4~$\Omega$ una vez descontada la resistencia de las puntas del multímetro,
+que en medidas de este orden no es despreciable.
+
+La resistencia es del tipo fusible, es decir, está diseñada para abrirse ante
+una sobrecarga. Es una ventaja deliberada, con una consecuencia que conviene
+dejar escrita, y es que una resistencia fusible abierta se ve exactamente igual que una
+sana, así que si algún día el procesador de audio deja de recibir alimentación,
+medirla es lo primero.
+
+Queda una cuestión abierta y no conviene disimularla. La tensión de entrada del
+procesador de audio admite de 5 a 17~V \cite{DaisySeed}, y sobre el montaje en
+placa de inserción se quedó por debajo de ese mínimo, con las cifras que recoge
+el capítulo~\ref{cap:pruebas}. La causa se identificó y no era el filtro: se
+perdían seis décimas de voltio antes incluso de llegar a él, la medida de
+resistencia de la rama oscilaba al repetirla —la firma de un contacto
+intermitente— y con la resistencia retirada por completo la tensión seguía sin
+llegar. El problema estaba en los contactos de la placa de inserción, en serie
+con la alimentación, así que se decidió no seguir investigándolo y resolverlo
+al soldar. Esa comprobación, sobre la placa ya soldada, es la que queda
+pendiente.
+
+\subsection{Dos fuentes a la vez, y las masas}
+
+La \gls{cyd} se reprograma por su propio conector \gls{usb}, así que en algún
+momento va a estar alimentada por las dos fuentes a la vez. Un diodo Schottky
+en su rama resuelve el conflicto, porque la placa toma la más alta de las dos
+tensiones y no circula corriente de una fuente a la otra; los otros dos módulos
+ya llevan ese diodo integrado. La caída medida es de tres décimas de voltio, de
+modo que la \gls{cyd} recibe 4,7~V. Mezclar fuentes tiene además un efecto que
+conviene conocer, y es que con el raíl apagado y la
+\gls{cyd} alimentada por su \gls{usb} se enciende el \gls{led} de alimentación
+del procesador de control, porque los 3,3~V de reposo de la línea de
+transmisión entran por el diodo de protección contra descargas del pin de
+entrada y alcanzan el raíl interno de la placa. Son unos pocos miliamperios y
+no rompen nada, pero es una condición sucia, así que el instrumento se enciende
+dando tensión al raíl antes o a la vez que a la \gls{usb}.
+
+Las masas siguen tres reglas. La primera la impone el fabricante del procesador
+de audio, que exige unir la masa analógica con la digital en toda aplicación
+\cite{DaisySeed}; se hace en un único punto y cerca de la placa, porque unirlas
+en varios sitios haría circular las corrientes de retorno de los otros módulos
+por la masa analógica. La segunda es que el manguito del jack va a la masa
+analógica y no al raíl general. La tercera se decidió midiendo en vez de por
+convención: los potenciómetros del panel podrían retornar a la masa analógica,
+como parecía obvio, o a la digital, que quedaba mucho más a mano en el trazado.
+La diferencia de potencial entre ambas resultó ser de unos 1,7~mV sobre un
+fondo de escala de 3,3~V, es decir un 0,05\,\%, así que se eligió la digital.
+Lo que importaba de verdad se conserva igualmente, porque la patilla superior
+de los potenciómetros sigue colgando de la alimentación analógica y la
+cancelación que se explicó en el apartado~\ref{sec:panel} sigue intacta.
+
+\section{La placa concentradora}
+\label{sec:veroboard}
+
+El montaje definitivo va sobre una placa perforada de tiras de cobre de
+100$\times$160~mm, que a paso de 2,54~mm son 39 tiras de 63 agujeros cada una.
+No es un prototipo, se suelda una vez. Esa premisa invirtió el orden habitual
+de trabajo, porque obligó a fijar por escrito la asignación de patillas
+\emph{antes} de construir nada y a montar el panel de control contra esa
+especificación, y no al revés.
+
+\subsection{Por qué hay que cortar sesenta pistas}
+
+La regla que gobierna todo el trazado se ve en la parte derecha de la
+Figura~\ref{fig:veroboard}. Un módulo con dos filas de patillas, colocado
+perpendicular a las tiras, deja enfrentadas la patilla $p$ y la $41-p$ sobre la
+misma tira, y por tanto en cortocircuito. Colocarlo paralelo a las tiras no es
+alternativa, porque entonces las veinte patillas de una fila caen sobre la
+misma tira.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=\textwidth]{veroboard.pdf}
+    \caption{A la izquierda, el reparto de la placa: los dos raíles, las huellas
+             de los dos módulos con sus líneas de corte y las tres zonas. Es un
+             esquema del reparto, no un plano acotado. A la derecha, la razón de
+             los cortes, con cuatro de las parejas que son destructivas si se
+             olvidan.}
+    \label{fig:veroboard}
+\end{figure}
+
+De las veinte parejas del procesador de audio, cinco son destructivas. La peor
+pone la alimentación analógica directamente contra la masa analógica; otra mete
+los 5~V de la entrada de alimentación en una patilla de propósito general; una
+tercera deja el cursor de un potenciómetro sobre la salida de audio. Ninguna de
+las veinte uniones es deseable, así que no hay nada que decidir, y se cortan las
+veinte, y las veintidós del otro módulo por el mismo motivo. Con los cortes de
+separación entre ambos, los de aislamiento de los raíles locales y el del raíl
+de 5~V, la placa terminada lleva 61.
+
+Los cortes se hacen antes de soldar los zócalos, porque después el cuerpo del
+módulo tapa la zona y ya no se llega, y se comprueban con doble medida: a lo
+largo de la tira cruzando el agujero, que tiene que quedar en abierto, y contra
+las dos tiras vecinas, por si la broca ha raspado el borde. Esa segunda medida
+no es un exceso de celo, y cazó una rebaba de cobre que después se habría
+manifestado como un cortocircuito de origen incomprensible.
+
+El reparto a lo largo de los 63 agujeros no se hizo por comodidad sino por
+naturaleza de la señal. El enlace \gls{spi} corre a 10~MHz y es lo más agresivo
+de la placa, así que su recorrido tiene que ser corto y no pasar cerca del jack
+ni de los cursores; la salida de audio y la masa analógica se van al borde
+opuesto, donde además caen las patillas de los potenciómetros, de modo que la
+zona analógica queda agrupada sin esfuerzo. Conviene subrayar además qué es
+esta placa, porque condiciona todo lo demás. No es «el circuito», es un
+concentrador con los dos módulos, la alimentación y una fila de conexiones.
+Nada de lo que el usuario toca o mira va soldado a ella; todo eso vive en el
+panel y baja por un mazo de 39 hilos, como en un pedal de guitarra.
+
+\subsection{Dos tropiezos y lo que dejaron}
+
+El primero no fue de fabricación sino de documentación. Los tres cortes de
+aislamiento que el documento de diseño daba por necesarios resultaron ser
+incorrectos los tres al contrastarlos con el fichero del esquemático: uno
+atacaba un riesgo que el trazado real no tenía, otro ya existía en otra tira y
+el tercero no hacía falta. La causa no era aritmética, sino que el documento se
+había escrito en varias pasadas y el esquemático se dibujó entre dos de ellas
+con una asignación de tiras distinta y mejor, de modo que la última sección se
+dedujo sobre números ya caducos. De ahí sale un principio que vale más allá de
+este montaje: un documento de diseño escrito en pasadas separadas en el tiempo
+puede quedar obsoleto frente al fichero que de verdad lo implementa, y antes de
+fabricar hay que decodificar el fichero fuente, no releer el documento
+derivado.
+
+El segundo fue de fabricación y caro. El trazado se calcó sobre la cara de
+cobre en lugar de sobre la de baquelita, y la vista de la herramienta de
+esquemático es la cara de componentes, de modo que la placa salió en espejo
+respecto al diseño. No se arregla renumerando, porque un circuito en espejo es
+eléctricamente idéntico sólo mientras todas las piezas tengan dos patillas, y
+un módulo de dos filas tiene quiralidad. Con 57 cortes ya taladrados y
+comprobados uno a uno, se decidió adaptarse a la placa en lugar de rehacerla, y
+se volvió a trazar contando sobre el cobre real. El precio fue que cuatro
+cursores y el selector ya no podían llegar a sus patillas originales, lo que en
+el firmware se resolvió cambiando una línea. En esa reasignación apareció
+además un detalle difícil de diagnosticar después: dos de las patillas
+candidatas son las únicas de su bloque sin canal de conversión
+analógico-digital, así que el cursor que había caído en una de ellas no habría
+leído nada. La lección se deja escrita: el trazado de una placa de tiras se
+calca sobre la cara de componentes.
+
+Una última decisión se tomó también con el número delante. El diseño preveía
+reforzar los dos raíles con hilo de cobre desnudo para atacar la caída de
+tensión del apartado anterior, pero una tira pelada de 160~mm son
+19~m$\Omega$, unos 11~mV a plena carga, frente a los 6,4~$\Omega$ de los
+contactos de la placa de inserción. El refuerzo era mecánico, no eléctrico, y
+lo que mata esa resistencia de contacto es simplemente soldar. Se dejó sin
+poner.
+
+\section{El panel de control}
+\label{sec:panel-fisico}
+
+La Figura~\ref{fig:panel} es el alzado del panel, dibujado a escala a partir
+del mismo fichero paramétrico del que salió la pieza impresa.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.72\textwidth]{panel.pdf}
+    \caption{Alzado del panel frontal. El trazo discontinuo es el contorno de
+             las dos placas, que quedan por detrás; el continuo, lo que se ve
+             desde fuera. Cotas en milímetros.}
+    \label{fig:panel}
+\end{figure}
+
+Los seis potenciómetros son lineales de 10~k$\Omega$ y cuelgan de la
+alimentación analógica del procesador de audio, que es la disposición que el
+propio fabricante recoge como aplicación típica \cite{DaisySeed}. El valor no
+es indiferente, porque los seis suman unos 2~mA sobre el raíl analógico, mientras que
+valores menores lo cargarían sin motivo y mayores harían la lectura más
+sensible al ruido captado por el cable. Cada cursor lleva un cerámico de 100~nF
+a la masa analógica, soldado en el extremo de la placa y no en el
+potenciómetro, porque ahí filtra lo que ha recogido el hilo, y viaja trenzado
+con un hilo de masa para reducir el área del bucle entre señal y retorno.
+
+El selector de tipo de filtro es un conmutador de tres posiciones con la
+central abierta, y el fabricante también documenta cómo leerlo desde una
+entrada analógica \cite{DaisySeed}. Sus dos resistencias de 10~k$\Omega$, cuya
+función en la posición central se explicó en el apartado~\ref{sec:panel}, van
+en la placa y no en el conmutador, así que al panel sólo sube el común: los
+otros dos hilos que necesita ya subían para los potenciómetros y el divisor no
+añade ninguno al mazo.
+
+El grosor del panel no se eligió por gusto, lo topa la rosca del
+potenciómetro, que mide 7,0~mm y de la que hay que descontar arandela y tuerca,
+así que el máximo absoluto está en 4,1 y se trabaja con 3,4. Esa restricción
+arrastró otras decisiones, como descartar el avellanado que habría escondido
+las cabezas de los tornillos de la pantalla táctil, porque habría exigido cinco
+milímetros. La rosca, por cierto, resultó ser M7$\times$0,75 y no M6 como
+parecía, porque los 6~mm que se habían medido eran el eje estriado.
+
+La espiga antigiro dio el detalle menos evidente de la pieza. No es redonda,
+sino una pletina rectangular de 2,8 por 1,2~mm tangente a la circunferencia del
+eje, y su orientación no es libre, porque las tres patillas del potenciómetro salen a
+noventa grados de ella, así que con la pletina hacia arriba apuntan al
+potenciómetro vecino y no caben dos seguidos. Girándola media vuelta quedan
+perpendiculares a la fila y el paso de 24~mm se mantiene sin tocar nada más.
+
+Las dos ventanas comparten una dificultad de fondo, y es que una esquina
+interior impresa nunca sale viva porque la boquilla tiene radio. El módulo de
+la pantalla táctil entra en un rebaje por detrás con descarga en las cuatro
+esquinas; sin ella apoyaría sobre los radios y no llegaría a asentar. La
+ventana tiene además el labio izquierdo cuatro milímetros más adentro que el
+derecho, para tapar un borde negro que asomaba, y los cuatro tornillos van a
+4,0~mm de cada borde, cota que da la documentación del propio proyecto de la
+placa \cite{CYDrepo}. La pantalla va girada media vuelta por un motivo
+puramente físico, que su conector \gls{usb} quede en el lado opuesto a la
+\gls{oled}; lo que costó en firmware, rehacer la calibración entera, está en el
+apartado~\ref{sec:tactil}.
+
+Las etiquetas van grabadas en la cara vista, con un milímetro de profundidad, y
+su tamaño lleva ajuste automático por número de caracteres para que las largas
+no invadan a sus vecinas. Fuera del panel quedan el jack, los conectores de
+notas, la entrada de alimentación y el interruptor de red, que se llevaron a
+las paredes de la caja. El jack es de cuerpo de plástico y queda aislado del
+panel a propósito, porque uno metálico uniría el manguito a cualquier
+apantallado y crearía el segundo camino de masa que las reglas del apartado
+anterior se dedican a evitar.
+
+\section{La carcasa}
+\label{sec:carcasa}
+
+La carcasa no es una pieza de forma libre: es un conjunto de agujeros a cotas
+exactas, y cada cota depende de una pieza física que hay que medir. Por eso se
+modeló con una herramienta de diseño paramétrico por texto, en la que corregir
+una cota es cambiar un número, en lugar de con un modelador orgánico, donde
+habría que rehacer la geometría. Esa decisión, tomada al empezar, es la que
+hizo viable todo lo demás, porque el diseño pasó por decenas de correcciones de
+milímetros y ninguna obligó a rehacer trabajo hecho.
+
+El método que lo estructuró fue no imprimir nunca la pieza grande para
+averiguar si una cota estaba bien. El panel completo tarda unas dos horas y
+media; una probeta que comprueba una sola cota cuesta entre cinco y veinte
+minutos. Hay un detalle sin el cual el método no sirve de nada, y es que la
+probeta tiene que laminarse con el mismo perfil que la pieza definitiva, porque
+el diámetro real de un agujero impreso depende del ancho de línea, del número
+de perímetros y de la velocidad. Las probetas se implementaron dentro del
+propio fichero de la pieza, seleccionables con un parámetro, de modo que
+comparten parámetros con ella y lo que se valida en una vale automáticamente en
+la otra. Cinco probetas cazaron cinco fallos que habrían arruinado la impresión
+larga.
+
+El cuerpo es una cuña de 30~mm de alto por delante y 62 por detrás, con una
+bahía trasera plana que da 186 por 183,5~mm de planta, partida en tres piezas.
+El reparto no es estético, sale de dónde caen los voladizos, y cada pieza se
+imprime en la orientación en la que su geometría queda vertical o apoyada, sin
+necesitar soportes. La clave está en la trasera, que impresa tumbada sobre su
+cara exterior convierte la cubierta y los laterales en paredes verticales, y
+los huecos de los conectores de notas en agujeros verticales pasantes; así
+desaparecen a la vez un voladizo de 63~mm y unos puentes de 20. El fondo de la
+bahía tampoco es libre: lo fija la huella del shield de notas.
+
+Todas las uniones son por tornillo contra tuerca metálica embutida, y ninguna
+rosca en el plástico, porque el material aguanta tres montajes y al cuarto la
+rosca gira en vacío. Con el mismo criterio, todo lo que encaja tiene su holgura
+como parámetro con nombre, y los valores salen de imprimir y medir, ya que los
+agujeros impresos salen entre 0,2 y 0,35~mm menores que la cota, así que los
+pasos de tornillo de 3~mm van dibujados entre 3,4 y 3,8.
+
+Con todo, el episodio más instructivo de esta parte fue la sujeción de la
+placa, porque enseña que una pieza puede ser correcta y aun así no ser
+montable. Como no
+está taladrada, la idea era que entrase deslizando por la abertura trasera
+sobre unas repisas impresas, y al revisar el modelo resultó que, tal como
+estaban orientadas, era físicamente imposible meterla. Lo interesante es cómo
+se demostró, porque a simple vista no se veía. En lugar de mirar la vista
+previa se construyó el sólido de la placa en su posición final y se cortó
+contra el de la carcasa, con un criterio binario, y es que si las dos piezas no se
+solapan la intersección tiene que salir vacía. No salió vacía, y dio las
+coordenadas exactas de lo que estorbaba, dos pestañas de retención que nacían
+dentro de la propia huella de la placa. Barrer después la pieza a lo largo de
+su trayectoria de montaje confirmó que eran el único obstáculo, y el arreglo
+quedó acotado, porque una sujeción que se monta deslizando no puede ser un
+conjunto de topes, tiene que ser un canal abierto por detrás. Las pestañas
+antiguas eran geometría correcta —cerraban y se habrían impreso sin problema— y
+aun así la pieza era inmontable, porque el modelo describía el estado final y
+no el camino para llegar a él.
+
+Con la caja montada, el instrumento queda descrito por completo, del conjunto
+de datos al plástico. Queda pendiente la comprobación eléctrica sobre la placa
+ya soldada, que debe cerrar la cuestión de la tensión de entrada del procesador
+de audio, y queda comprobar que el conjunto hace lo que se dice que hace, que
+es el asunto del capítulo siguiente.
