@@ -62,15 +62,26 @@ for ax, recorte in ((ax_ciclo, None), (ax_zoom, ZOOM)):
         ax.set_xlim(*recorte)
         ax.set_ylim(-135, 135)
 
-ax_ciclo.set_ylim(-135, 168)
-ax_ciclo.plot([], [], color=GRIS, linewidth=0.9, label="1024 muestras")
-ax_ciclo.plot([], [], color=NARANJA, linewidth=0.9, linestyle=(0, (3, 1.6)),
-              label="256 sin promediar")
-ax_ciclo.plot([], [], color=AZUL, linewidth=1.1, label="256 promediando")
-ax_ciclo.legend(loc="upper center", ncol=3, fontsize=6.8,
-                columnspacing=1.1, handlelength=1.8)
+ax_ciclo.set_ylim(-135, 135)
 
-ax_ciclo.axvspan(*ZOOM, color=AZUL, alpha=0.07, zorder=0)
+# Leyenda debajo de las dos graficas. Dentro del recuadro tapaba la parte alta
+# de la onda y obligaba a dejar un hueco arriba que no hacia falta.
+claves = [
+    ax_ciclo.plot([], [], color=GRIS, linewidth=0.9,
+                  label="1024 muestras")[0],
+    ax_ciclo.plot([], [], color=NARANJA, linewidth=0.9,
+                  linestyle=(0, (3, 1.6)), label="256 sin promediar")[0],
+    ax_ciclo.plot([], [], color=AZUL, linewidth=1.1,
+                  label="256 promediando")[0],
+]
+fig.legend(handles=claves, loc="lower center", bbox_to_anchor=(0.5, -0.26),
+           ncol=3, fontsize=7.5, columnspacing=2.0, handlelength=2.2)
+
+# Sombreado del tramo que se amplia al lado. Con alpha 0,07 no se distinguia
+# del fondo, asi que se sube y se marcan los dos bordes con una linea fina.
+ax_ciclo.axvspan(*ZOOM, color=AZUL, alpha=0.17, zorder=0)
+for borde in ZOOM:
+    ax_ciclo.axvline(borde, color=AZUL, linewidth=0.7, alpha=0.6, zorder=0)
 ax_zoom.set_title("ampliación del tramo sombreado", fontsize=7.5, color=GRIS)
 
 guardar(fig, "diezmado")

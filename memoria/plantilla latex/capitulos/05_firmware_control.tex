@@ -16,23 +16,25 @@ neuronal.
 \label{sec:tactil}
 
 La \gls{cyd} es una placa genérica sin manual de fabricante, cuya documentación
-es comunitaria \cite{CYDrepo}, así que los pines se confirmaron uno a uno contra
-el esquemático que la acompaña. Integra una pantalla \gls{tft} de 240$\times$320
-puntos y un táctil resistivo de cuatro hilos gobernado por un XPT2046, que es un
-convertidor analógico-digital de aproximaciones sucesivas
-(\gls{sar}) de 12 bits \cite{XPT2046}. De ahí sale el dato que gobierna toda la
-calibración, y es que cada eje se lee como un entero entre 0 y 4095 en cuentas
-del convertidor, sin ninguna relación directa con los píxeles de la pantalla.
+es comunitaria \cite{CYDrepo}, así que los pines se confirmaron uno a uno contra 
+el esquemático que la acompaña. Integra una pantalla \gls{tft} de 240$\times$320 
+puntos y, encima de ella, una lámina táctil resistiva. Esa lámina no entrega una 
+posición, sino una tensión que cambia según dónde se apoye el dedo, y quien la traduce
+a número es un XPT2046, un conversor analógico-digital de 12 bits \cite{XPT2046}. 
+Doce bits dan 4096 valores, de modo que cada eje se lee como un entero entre 0 y 
+4095. Conviene retener que esos números no son píxeles ni milímetros, sino cuentas 
+del conversor. De ahí sale todo lo que viene después, calibrar consiste 
+precisamente en averiguar qué cuenta corresponde a cada borde.
 
-Táctil y pantalla cuelgan de buses distintos, y no por casualidad. El táctil usa
-el bus VSPI con un objeto propio y los pines de fábrica de la placa, mientras que
-la pantalla se controla con la librería \texttt{TFT\_eSPI} \cite{TFTeSPI} sobre
-el bus HSPI. Por defecto esa librería también tomaría el VSPI, con lo que dos
-objetos acabarían disputándose el mismo periférico. Forzando el HSPI son dos
-buses independientes que conviven sin estorbarse, y de paso los pines 12 a 15
-son los nativos del HSPI en el ESP32, encaminados por la matriz \mbox{IO MUX}
-\cite{EspressifESP32}, que es la ruta directa y rápida. El táctil se lee con la
-librería de Stoffregen \cite{XPT2046Touchscreen}.
+La pantalla y el táctil son dos chips distintos y cada uno se comunica con el ESP32 por 
+su propio bus \gls{spi}. La placa dispone de dos, llamados VSPI y HSPI, y aquí se 
+usa uno para cada cosa. El táctil se queda en el VSPI, que es donde lo dejó cableado 
+el fabricante, y la pantalla se lleva el HSPI. El reparto no es opcional porque la 
+librería de la pantalla, \texttt{TFT\_eSPI} \cite{TFTeSPI}, toma el VSPI por omisión 
+y sin forzarla los dos chips acabarían disputándose el mismo bus. El HSPI sale además 
+ganando, ya que los pines 12 a 15 son los que el ESP32 tiene reservados para él 
+\cite{EspressifESP32} y eso les da una conexión interna directa, más rápida que la ruta 
+genérica. El táctil se lee con la librería de Stoffregen \cite{XPT2046Touchscreen}.
 
 Esa configuración vive en el fichero de proyecto de PlatformIO y no en el
 \texttt{User\_Setup.h} de la librería, que es donde normalmente se pone. El
@@ -63,28 +65,16 @@ que evita invertir el mapeo a mano. Pero, por eso mismo, los cuatro límites de
 calibración quedan espejados y hay que rehacerlos cruzando mínimo con máximo,
 con lo que pasan a 148 a 3962 y 198 a 3902.
 
-La ventana impresa del panel se come parte del cristal, y esa parte hubo que
-medirla. La predicción hecha sobre plano, que daba un recorte de 3,75~mm por el
-lado izquierdo y nada en vertical, no resistió el banco. Con la placa ya montada,
-tocando las cuatro esquinas del hueco, los límites reales salieron 450 a 3730 en
-los dos ejes. El labio asimétrico del panel existe, pero pesan más el error de
-montaje y un ligero giro del táctil respecto al hueco. Se intentó ajustar esquina
-por esquina y se descartó, porque las dos lecturas superiores no coincidían entre
-sí en el eje vertical, con unas 230 cuentas de desviación entre la izquierda y la
-derecha. Esa discrepancia es la firma de un giro, y un mapeo rectangular no puede
-corregir un giro, así que perseguir cuatro números que no cuadran entre ellos
-solo habría movido el problema de sitio.
-
-Quedaba un problema más difícil. El labio impreso apoya sobre el cristal en todo
-el perímetro y genera pulsaciones fantasma pegadas al borde. Una de las medidas
-dio la lectura cruda (3714, 643), a solo 16 cuentas del límite derecho, es decir
-dentro del rectángulo que se había dado por útil. Ningún ajuste de esos límites
-podía rechazarla sin rechazar también contacto legítimo del dedo. Se probó
-entonces a filtrar por presión, aprovechando que el XPT2046 la estima y que el
-plástico apoya de forma constante pero floja mientras el dedo aprieta más, y
-también se descartó. La fiabilidad de esa lectura en esta placa concreta es
-dudosa y, sobre todo, introducía un umbral que mal ajustado podía dejar el táctil
-mudo.
+Falta descontar lo que el panel tapa. Con la placa ya montada, tocando las cuatro 
+esquinas del hueco, el área que asoma resultó ir de 450 a 3730 en los dos ejes. 
+Se intentó afinar esquina por esquina y se descartó porque las lecturas no cuadraban 
+entre sí, señal de que el táctil está algo girado respecto al hueco y un mapeo 
+rectangular no corrige un giro. Apareció además un problema que ese recorte no 
+resolvía. El labio impreso que apoya sobre el cristal en todo el perímetro genera 
+pulsaciones fantasma pegadas al borde, una de ellas medida en (3714, 643), es decir 
+dentro del área que se había dado por buena. Filtrar por presión habría sido la salida 
+evidente, pero la estimación que da el XPT2046 en esta placa es poco fiable y un umbral 
+mal ajustado podía dejar el táctil mudo. Por ello se ajustaron nuevos límites en consecuencia.
 
 \begin{figure}[htbp]
     \centering
@@ -138,8 +128,8 @@ apartado~\ref{sec:enlaces} la decodifica una máquina de estados que busca el by
 de cabecera, lee los cuatro de datos y valida la suma de comprobación. Ante
 cualquier fallo vuelve al estado inicial a buscar cabecera, de forma que un byte
 perdido descuadra una trama pero no el flujo. Conviene señalar que esa entrada
-convive con otra por \gls{usb}, en la que la coordenada se escribe a mano como
-texto. No es un resto de depuración olvidado. Fue lo que permitió construir y
+también se puede hacer por \gls{usb}. Aquí la que la coordenada se escribe a mano como
+texto en el Serial Port. Fue lo que permitió construir y
 validar la interpolación antes de que existiera el firmware de la \gls{cyd}, y
 es también lo que hace posibles las medidas del capítulo~\ref{cap:pruebas}, que
 necesitan una coordenada conocida y estable.
@@ -159,7 +149,7 @@ misma y el peso hacia ella queda a cero. La operación sigue siendo la misma
 combinación de cuatro tablas, solo que dos de ellas coinciden y aportan peso
 nulo, con lo que no se sale del array ni hace falta una rama distinta.
 
-Hay que respetar la convención de índices que fija la cabecera generada en el
+Hay que respetar la disposición matricial de índices que fija la cabecera generada en el
 apartado~\ref{sec:rejilla}, con la fila recorriendo el eje vertical y la columna
 el horizontal. Es el detalle más fácil de equivocar de todo el firmware y el que
 peor avisa cuando se equivoca, porque permutar los ejes no rompe nada visible.
@@ -187,13 +177,13 @@ Merece una aclaración cómo se hace la aritmética, porque el formato de
 almacenamiento y el de cálculo no coinciden. Las tablas se guardan como enteros
 de 16 bits en formato Q15, pero la mezcla se calcula en coma flotante de 32 bits
 y solo se redondea al pasar el resultado a Q15, una vez por muestra. El ESP32-S3
-tiene unidad de coma flotante en hardware, así que las mil y pico operaciones que
+tiene unidad de coma flotante en hardware, así que las más de mil operaciones que
 esto cuesta son despreciables frente a los 1,6~ms que después ocupa la
-transferencia, y el cálculo se ejecuta a frecuencia de control, unas decenas de
-veces por segundo como mucho. La ventaja de hacerlo así es que cada muestra sufre
+transferencia. Cabe recordar que el cálculo se ejecuta a frecuencia de control, unas decenas de
+veces por segundo como mucho así que no es tan dramático. La ventaja de hacerlo así es que cada muestra sufre
 un único redondeo en lugar de acumular el de cada paso intermedio. Tampoco hace
-falta saturar el resultado, porque los cuatro pesos suman uno y están todos entre
-cero y uno, de modo que la mezcla es una combinación convexa de cuatro valores
+falta saturar el resultado porque los cuatro pesos suman uno y están todos entre
+cero y uno. De este modo, la mezcla es una combinación convexa de cuatro valores
 que ya caben en Q15 y no puede salirse del rango.
 
 La rejilla se compila como una constante de $16\times16\times1024$ enteros de 16
@@ -211,40 +201,6 @@ misma interpolación sobre el fichero de la rejilla y se compara muestra a muest
 con el volcado que el ESP32-S3 imprime por \gls{usb}. Es una comprobación de
 equivalencia frente a una referencia, no de plausibilidad. El resultado se recoge
 en el capítulo~\ref{cap:pruebas}.
-
-\section{Envío de la tabla al procesador de audio}
-\label{sec:emisor-spi}
-
-El ESP32-S3 dispone de varios controladores \gls{spi}, pero dos de ellos quedan
-dedicados a la memoria de programa y la \gls{psram} del propio encapsulado y no
-son utilizables \cite{EspressifS3}. Se emplea el primero de los de propósito
-general, sobre los \gls{gpio} 10 a 13. La elección tenía que esquivar además los
-pines que ocupa la variante con memorias octales de esta placa, más el que ya
-usaba la entrada del \gls{uart}, y esos cuatro eran los que quedaban libres sin
-comprometer nada.
-
-El envío es de maestro, a 10~MHz, en modo 0 y con el bit más significativo por
-delante. El selector de chip se gobierna a mano en lugar de dejarlo al
-periférico, porque la escritura en bloque de la librería no lo conmuta por su
-cuenta. La transferencia de los 2054 bytes bloquea durante 1,6~ms, cosa que no
-supone problema alguno a la cadencia de control con la que se llama.
-
-El contenido de la trama es el del apartado~\ref{sec:enlaces}. Las 1024 muestras
-se copian en bloque, sin recorrer el array muestra a muestra, porque los dos
-extremos del enlace almacenan los enteros de 16 bits en el mismo orden de bytes
-y no hay nada que reordenar. Sobre ese bloque se calcula el \gls{crc} de 16 bits
-que cierra la trama.
-
-Ese \gls{crc} está escrito tres veces de forma idéntica, en el emisor, en el
-receptor y en el guion de validación. Duplicar código suele ser mala señal, pero
-aquí es deliberado, ya que tener la misma función en los tres sitios permite
-comparar el valor calculado en cada uno y distinguir un fallo de transporte de
-un fallo de cálculo. La validación cruzada del enlace tiene una particularidad de
-método que conviene contar. El primer intento se hizo deslizando el dedo por la
-\gls{cyd}, y resultó inútil, porque con el dedo en movimiento no hay forma de
-saber con certeza qué trama recibida corresponde a qué coordenada enviada. Se
-repitió con una coordenada fija escrita por \gls{usb}, que es lo que da una
-referencia inequívoca. Las cifras están en el capítulo~\ref{cap:pruebas}.
 
 \section{El canal de vuelta y el dibujo de la onda}
 \label{sec:pantalla}
@@ -266,16 +222,16 @@ sentido de vuelta no costó más que añadir el hilo y un emisor.
     \label{fig:diezmado}
 \end{figure}
 
-La reducción a 256 puntos de 8 bits, cuyo porqué ya se explicó en el
-apartado~\ref{sec:enlaces}, no se hace tomando una muestra de cada cuatro sino
-promediando cada grupo de cuatro antes de quedarse con un punto, y el paso de
-Q15 a Q7 se resuelve con un desplazamiento de ocho bits.
-La Figura~\ref{fig:diezmado} compara los dos métodos sobre el nodo de la rejilla
-en el que más se separan. En el grueso del ciclo coinciden, y la diferencia se
-concentra en los tramos de pendiente fuerte, donde llega a 68 cuentas de Q7 sobre
-una amplitud máxima de 122. Es decir, sin promediar la figura de la pantalla
-seguiría reconociéndose, pero colocaría mal los flancos, que es precisamente
-donde el ojo juzga la forma de una onda.
+Reducir la onda a 256 puntos, cuyo porqué se explicó en el apartado~\ref{sec:enlaces}, 
+admite dos maneras. La inmediata es quedarse con una muestra de cada cuatro y descartar 
+las otras tres. La que se usa aquí es promediar cada grupo de cuatro, que cuesta 
+prácticamente lo mismo y no tira información por el camino. Cada muestra pasa 
+además de 16 a 8 bits conservando la mitad alta. La Figura~\ref{fig:diezmado} 
+enfrenta los dos métodos sobre el nodo de la rejilla en el que más se diferencian. 
+En casi todo el ciclo coinciden, y la separación se concentra en los tramos de 
+pendiente fuerte, donde alcanza 68 cuentas sobre una amplitud máxima de 122. 
+Descartar muestras no haría irreconocible el dibujo, pero desplazaría los flancos, 
+que es justamente donde se aprecia si una onda es cuadrada, de sierra o de pulso.
 
 Dos tropiezos de esta parte tienen causa identificada y merece la pena dejarlos
 escritos. El primero fue que no llegaba ninguna trama buena, no que llegaran
@@ -298,19 +254,52 @@ la pantalla completa dejaría parte de la interfaz debajo del plástico, así qu
 área útil se acotó a los píxeles que salen de convertir la ventana visible de la
 Figura~\ref{fig:ventanas}. Dentro de ella se reparten un título, una banda de
 estado con la coordenada, el número de secuencia y el contador de tramas
-descartadas, y el recuadro de la onda. La primera versión de ese reparto dejaba
-la banda de estado terminando en la misma fila en la que empezaba el recuadro, y
-el texto se comía la línea superior del marco. El patrón de arranque cierra el
+descartadas, y el recuadro de la onda. El patrón de arranque cierra el
 asunto de forma barata, porque dibuja un marco blanco justo en el límite del área
 útil y basta con ver si los cuatro lados asoman por la ventana para saber si las
 constantes cuadran con el hueco.
+
+\section{Envío de la tabla al procesador de audio}
+\label{sec:emisor-spi}
+
+El ESP32-S3 tiene cuatro controladores \gls{spi}, pero dos están permanentemente 
+ocupados hablando con la memoria del propio chip y no se pueden usar \cite{EspressifS3}. 
+Se emplea uno de los dos libres. Los pines tampoco se eligieron con libertad
+porque esta versión de la placa monta unas memorias que ocupan más patillas de 
+lo habitual y otra estaba ya dedicada a recibir el \gls{uart} de la \gls{cyd}. 
+Los \gls{gpio} 10 a 13 fueron los que quedaron.
+
+En este enlace manda el ESP32-S3 y la Daisy escucha, a 10~MHz, en modo 0 y con el 
+bit más significativo por delante, que son los ajustes que los dos extremos tienen 
+que compartir para entenderse. La línea que anuncia el comienzo de cada transferencia 
+se gobierna desde el programa en vez de dejarla al periférico, porque la función que 
+envía el bloque de golpe no la mueve por su cuenta. Los 2054 bytes tardan 1,6~ms, y 
+durante ese rato el programa no hace nada más, cosa que no estorba cuando se envía 
+unas pocas decenas de veces por segundo.
+
+El contenido de la trama es el del apartado~\ref{sec:enlaces}. Las 1024 muestras
+se copian en bloque, sin recorrer el array muestra a muestra, porque los dos
+extremos del enlace almacenan los enteros de 16 bits en el mismo orden de bytes
+y no hay nada que reordenar. Sobre ese bloque se calcula el \gls{crc} de 16 bits
+que cierra la trama.
+
+Ese \gls{crc} está escrito tres veces de forma idéntica, en el emisor, en el
+receptor y en el guion de validación. Duplicar código suele ser mala señal, pero
+aquí es deliberado, ya que tener la misma función en los tres sitios permite
+comparar el valor calculado en cada uno y distinguir un fallo de transporte de
+un fallo de cálculo. La validación cruzada del enlace tiene una particularidad de
+método que conviene contar. El primer intento se hizo deslizando el dedo por la
+\gls{cyd}, y resultó inútil, porque con el dedo en movimiento no hay forma de
+saber con certeza qué trama recibida corresponde a qué coordenada enviada. Se
+repitió con una coordenada fija escrita por \gls{usb}, que es lo que da una
+referencia inequívoca. Las cifras están en el capítulo~\ref{cap:pruebas}.
 
 \section{Estado del subsistema}
 
 Con esto queda cerrada la cadena que va del dedo a la trama de audio. La
 \gls{cyd} lee el táctil, lo filtra contra la ventana de captura, lo normaliza y
 lo envía; el ESP32-S3 localiza la celda, mezcla las cuatro vecinas y entrega la
-tabla por \gls{spi}, además de devolver a la pantalla una versión reducida de lo
+tabla por \gls{spi}, además de devolver a la pantalla una versión simplificada de lo
 que está sonando. Las dos comprobaciones cuantitativas que sostienen este
 capítulo, la equivalencia de la interpolación frente a la referencia y la
 integridad del enlace, se recogen juntas en el capítulo~\ref{cap:pruebas} para
