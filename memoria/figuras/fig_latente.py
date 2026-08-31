@@ -3,7 +3,7 @@
 Cada punto es la media de la distribucion que el codificador asigna a una de
 las 4358 ondas del conjunto de entrenamiento. Se colorean las doce familias
 mas numerosas y el resto queda en gris. Encima se superpone el rectangulo de
-percentiles 2-98 que delimita la rejilla y los 256 nodos que se decodifican.
+percentiles 2-98 de cada eje, que delimita la zona poblada del plano.
 
 Los datos vienen de datos/latent_mu.npy, precalculado con PyTorch a partir de
 ml/exports/vae.pt; este script solo necesita numpy.
@@ -22,7 +22,6 @@ RAIZ = Path(__file__).resolve().parent.parent.parent
 mu = np.load(Path(__file__).resolve().parent / "datos" / "latent_mu.npy")
 familias = np.load(RAIZ / "ml" / "dataset" / "akwf_families.npy", allow_pickle=True)
 
-GRID = 16
 x_min, x_max = np.percentile(mu[:, 0], [2, 98])
 y_min, y_max = np.percentile(mu[:, 1], [2, 98])
 
@@ -41,12 +40,7 @@ for i, fam in enumerate(top):
     ax.scatter(mu[m, 0], mu[m, 1], s=6, color=cmap(i), alpha=0.85,
                linewidths=0, label=fam)
 
-# Rejilla horneada: rectangulo de percentiles y los 256 nodos que se decodifican
-xs = np.linspace(x_min, x_max, GRID)
-ys = np.linspace(y_min, y_max, GRID)
-nx, ny = np.meshgrid(xs, ys)
-ax.scatter(nx, ny, s=3.5, color=NARANJA, marker="+", linewidths=0.6,
-           label="nodos de la rejilla")
+# Zona poblada del plano: percentiles 2-98 de cada eje
 ax.add_patch(Rectangle((x_min, y_min), x_max - x_min, y_max - y_min,
                        fill=False, edgecolor=NARANJA, linewidth=1.1,
                        linestyle="--"))

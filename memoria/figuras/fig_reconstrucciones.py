@@ -35,10 +35,12 @@ for ax, k in zip(axes.ravel(), orden):
     ax.set_xticks([0, 512, 1024])
 
 axes[0, 0].set_ylim(-1.15, 1.15)
-axes[0, 0].legend(loc="lower right", fontsize=6.5)
 for ax in axes[1]:
     ax.set_xlabel("Muestra")
 for ax in axes[:, 0]:
     ax.set_ylabel("Amplitud")
 
+fig.tight_layout()
+fig.legend(*axes[0, 0].get_legend_handles_labels(), loc="lower center",
+           ncol=2, fontsize=8, bbox_to_anchor=(0.5, -0.03))
 guardar(fig, "reconstrucciones")
