@@ -21,7 +21,7 @@ Esa homogeneidad de formato es lo que hace la colección utilizable sin apenas
 trabajo de limpieza. Hay carpetas de formas geométricas clásicas, de emulaciones de instrumentos
 acústicos, de sonidos de videoconsola y de material ruidoso sin tono definido.
 Un autoencoder solo puede organizar un plano de timbres si el material de
-partida tiene timbres distintos que organizar así que tener esta variedad de sonidos
+partida tiene timbres distintos que organizar, así que tener esta variedad de sonidos
 hace que este dataset sea utilizable.
 
 Conviene aclarar desde el principio qué son esas 65 carpetas. Son etiquetas de
@@ -116,7 +116,7 @@ es lo que consume el entrenamiento.
 \label{sec:modelo}
 
 El modelo es un autoencoder variacional de capas totalmente conectadas. El
-codificador reduce las 1024 muestras a 512 y después a 128 .De ahí salen dos
+codificador reduce las 1024 muestras a 512 y después a 128. De ahí salen dos
 vectores de dos componentes, la media y el logaritmo de la varianza de la
 distribución latente. El decodificador es el espejo exacto del codificador, de 2 a 128, a 512 y
 a 1024. Las capas intermedias usan la función de activación lineal rectificada
@@ -195,7 +195,7 @@ Al entrenamiento se le añadió además una precaución que no estaba en el plan
 inicial. En lugar de aplicar $\beta$ desde la primera época, se sube de cero a
 su valor definitivo mediante una rampa lineal a lo largo de las 50 primeras. Es
 la técnica que emplean Bowman y sus coautores para evitar el colapso posterior
-\cite{Bowman2016} ya descrita en el capítulo~2. Durante esas primeras épocas el
+\cite{Bowman2016}, ya descrita en el capítulo~2. Durante esas primeras épocas el
 modelo se concentra en aprender a reconstruir, y solo cuando ya tiene algo que
 perder entra la presión de la regularización.
 
