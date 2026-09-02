@@ -1,2 +1,426 @@
 \chapter{Pruebas y resultados}
 \label{cap:pruebas}
+
+Este capítulo reúne las comprobaciones que verifican el instrumento terminado.
+Son de dos clases. Las primeras son validaciones de la cadena de datos, hechas
+con guiones que comparan lo que produce cada placa contra una referencia
+calculada aparte, y son las que los capítulos~\ref{cap:firmware-control}
+y~\ref{cap:firmware-audio} dejaron apuntadas aquí. Las segundas son medidas
+eléctricas y de audio sobre el aparato montado, soldado y cerrado, y entre
+ellas está la que cierra la cuestión que el apartado~\ref{sec:alimentacion}
+dejó abierta, la tensión de entrada del procesador de audio. El capítulo
+termina con las incidencias que la verificación destapó.
+
+Conviene acotar antes lo que estas medidas pueden decir, porque todas salen de
+un único aparato, un multímetro Richmeters RM113D de valor eficaz verdadero y
+6000 cuentas, con banda de medida en alterna de 40~Hz a 1~kHz. No hubo
+osciloscopio ni analizador de audio. De ahí salen tres límites. En el rango de
+600~$\Omega$ el aparato resuelve 0,1~$\Omega$, así que toda resistencia por
+debajo de un ohmio cae en su suelo y su lectura es un límite y no un valor. Las
+puntas cortocircuitadas dan 1,3~$\Omega$ a la primera y 0,7~$\Omega$ apretando
+con firmeza, diferencia que es presión de contacto y no propiedad del cable.
+Se adopta el valor más bajo como referencia y todas las resistencias se dan en
+bruto y en neto. El rizado de una fuente conmutada vive en centenares de
+kilohercios, muy por encima de la banda que el aparato integra, de modo que
+toda lectura de alterna sobre un raíl es una cota superior de la componente de
+baja frecuencia y no una medida del ruido total.
+
+\section{Validación de la cadena de datos}
+\label{sec:validacion-datos}
+
+Las tres comprobaciones de esta sección tienen la misma forma. Un guion en el
+ordenador recalcula en doble precisión lo que debería salir, la placa vuelca
+por \gls{usb} lo que de verdad ha calculado y se comparan término a término.
+No son pruebas de que el instrumento haga algo, sino de que hace exactamente
+lo que dice la referencia. El método de cada una está en los
+apartados~\ref{sec:bilineal}, \ref{sec:emisor-spi} y~\ref{sec:midi}. Los resultados están
+en la Tabla~\ref{tab:validacion}.
+
+La interpolación bilineal del ESP32-S3 se comparó en cuatro coordenadas
+elegidas por su geometría, una junto al origen, el centro exacto de la
+rejilla, una esquina y un punto asimétrico que obliga a mapear los dos ejes de
+forma independiente. En las cuatro el error máximo es de 1~\gls{lsb} en Q15
+sobre las 1024 muestras, y en la más desfavorable solo 2 de esas 1024 muestras
+se desvían, con un error medio de 0,002. Es el límite de redondeo que impone
+el paso de coma flotante a entero de 16 bits y no un defecto de la
+implementación, de modo que la aritmética del ESP32-S3 y la de numpy son
+equivalentes.
+
+El transporte por \gls{spi} se validó con una coordenada fija escrita por
+\gls{usb}, por la razón de método que expone el apartado~\ref{sec:emisor-spi}.
+Para la coordenada (40000, 12000) el procesador de audio recibe las 1024
+muestras con 0~\gls{lsb} de error, es decir, la tabla que sale del interpolador
+y la que entra en el motor de síntesis son la misma bit a bit. El \gls{crc} de
+la trama cumple entonces el papel de detección para el que se puso y no ha
+tenido que descartar ninguna en esta prueba.
+
+La conversión de nota a frecuencia se comprobó sobre las 128 notas \gls{midi}.
+El firmware vuelca su propia tabla, calculada con la misma función que gobierna
+el oscilador, y el guion la contrasta contra la conversión en doble precisión y
+contra el incremento de fase deducido de la frecuencia de muestreo real de la
+placa. Ninguna de las 128 queda fuera de tolerancia. Las tolerancias se
+fijaron en 5~milihercios y 10~partes por millón. Esa tabla se validó
+sobre el firmware en mesa. Sobre el montaje definitivo la comprobación se
+repitió en vivo para el \emph{la} central, que el volcado da en 440~Hz exactos
+con resolución de milihercios.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Validación de la cadena de datos frente a una referencia
+             calculada en el ordenador.}
+    \label{tab:validacion}
+    \begin{tabular}{llc}
+        \toprule
+        \textbf{Etapa} & \textbf{Referencia} & \textbf{Error} \\
+        \midrule
+        Interpolación bilineal, 4 coordenadas   & numpy sobre la rejilla           & $\leq 1$~\gls{lsb} \\
+        Transporte \gls{spi} de la tabla        & la propia bilineal               & 0~\gls{lsb} \\
+        Conversión nota a frecuencia, 128 notas & \texttt{mtof} en doble precisión & 0 fuera de tolerancia \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\section{Continuidad y resistencia}
+\label{sec:continuidad}
+
+Estas medidas se hicieron con el instrumento sin alimentar, que es la única
+condición en la que un óhmetro funciona. La Tabla~\ref{tab:continuidad} las recoge.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Continuidad y resistencia, con el instrumento sin alimentar. El
+             valor neto descuenta los 0,7~$\Omega$ de las puntas. \emph{OL}
+             indica fuera de escala, es decir, del orden de los megaohmios.}
+    \label{tab:continuidad}
+    \begin{tabular}{lcc}
+        \toprule
+        \textbf{Punto de medida} & \textbf{Bruto} & \textbf{Neto} \\
+        \midrule
+        Puntas cortocircuitadas (referencia)       & 1,3 / 0,7~$\Omega$ & --- \\
+        Resistencia serie de la rama de audio      & 3,6~$\Omega$ & 2,9~$\Omega$ \\
+        Raíl de 5~V contra masa                    & OL & --- \\
+        Masa común entre las tres placas           & 1,5~$\Omega$ & 0,8~$\Omega$ \\
+        Aislamiento de los cortes de tira          & OL & --- \\
+        Interruptor abierto                        & OL & --- \\
+        Interruptor cerrado                        & 1,5~$\Omega$ & 0,8~$\Omega$ \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+La resistencia de la rama de audio es la única lectura contrastable contra un
+valor nominal, y da 2,9~$\Omega$ netos frente a los 3,3~$\Omega$ del
+componente. Está medida en circuito, con el resto del montaje en paralelo, y la
+incertidumbre de las puntas más la resolución del rango cubre la diferencia.
+
+Lo importante de la tabla es lo que no aparece. El raíl de 5~V contra masa da
+fuera de escala, así que no hay cortocircuito, que era la comprobación que más
+preocupaba. Los cortes de tira del
+apartado~\ref{sec:veroboard} aíslan todos, medidos a lo largo de la tira y
+contra las vecinas. La masa es común a las tres placas, condición de la que
+dependen los tres enlaces de datos del instrumento.
+
+Entre los dos extremos del interruptor hay 34~mV con 0,42~A
+circulando, lo que sitúa la resistencia del interruptor y su cableado en unos
+80~m$\Omega$, un orden de magnitud por debajo de lo que el óhmetro resuelve.
+Por debajo de un ohmio la resistencia se deduce de la caída de tensión con
+corriente conocida y no se lee en el óhmetro.
+
+\section{Tensiones de alimentación y rizado}
+\label{sec:tensiones}
+
+Todos los nodos de alimentación se midieron dos veces, primero con el
+instrumento encendido y en reposo y después en el peor caso que admite, con la
+pantalla táctil encendida, un dedo deslizando sobre ella y una nota sostenida
+sonando. La Tabla~\ref{tab:tensiones} recoge ambas columnas.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Tensiones continuas referidas a masa, en reposo y en el peor caso.
+             El guion indica un nodo que no se repitió en la segunda pasada.}
+    \label{tab:tensiones}
+    \begin{tabular}{lcc}
+        \toprule
+        \textbf{Nodo} & \textbf{Reposo} & \textbf{Peor caso} \\
+        \midrule
+        Raíl aguas arriba del interruptor, en vacío & 4,928~V & --- \\
+        Raíl aguas abajo, junto a la \gls{cyd}      & 4,894~V & 4,910~V \\
+        Shield \gls{midi}                           & \multicolumn{2}{c}{mismo nodo que el anterior} \\
+        Pin de 5~V del procesador de control        & 4,891~V & --- \\
+        Entrada de la \gls{cyd} tras el Schottky    & 4,557~V & 4,576~V \\
+        Entrada del procesador de audio (pin 39)    & 4,354~V & 4,475~V \\
+        Caída en la resistencia de 3,3~$\Omega$     & 0,543~V & 0,432~V \\
+        Raíl digital de 3,3~V (pin 38)              & 3,256~V & --- \\
+        Raíl analógico de 3,3~V (pin 21)            & 3,232~V & --- \\
+        Cursor de potenciómetro, tope superior      & 3,227~V & --- \\
+        Cursor de potenciómetro, tope inferior      & 0,004~V & --- \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+La segunda columna no es sistemáticamente menor que la primera, que es lo que
+cabría esperar al cargar el raíl, y eso no describe ninguna física razonable.
+La explicación está en la medida. Repitiendo el mismo punto sin tocar nada, la
+entrada del procesador de audio pasó de 4,354 a 4,445~V y la caída en la
+resistencia de 0,543 a 0,482~V, con la lectura visiblemente inestable. Lo que
+se mide no es un punto de trabajo estable sino una magnitud que varía con lo
+que el firmware esté haciendo. La única conclusión sólida que admiten estos
+números es la negativa, y es que el raíl no se hunde al cargarlo.
+
+La lectura que de verdad importa cierra la cuestión que dejó pendiente el
+apartado~\ref{sec:alimentacion}. Sobre la placa de prototipado la entrada del
+procesador de audio rondaba los 3,4~V, aunque esa cifra nunca fue de fiar,
+porque la lectura fluctuaba al repetirla sin haber tocado nada, que es la firma
+de un contacto intermitente. Esa inestabilidad era ya el indicio de que buena
+parte de la pérdida la ponían los contactos y no el filtro. Soldar lo confirma. Entre
+el raíl aguas abajo del interruptor, 4,894~V, y la entrada del procesador de
+audio, 4,354~V, hay 0,540~V, y la caída medida directamente sobre la
+resistencia del filtro es de 0,543~V. Las dos cifras coinciden dentro de tres
+milivoltios, de modo que ya no queda pérdida parásita en el camino y todo lo
+que se pierde se pierde en el componente que se puso para ello.
+
+Eso no hace desaparecer el problema, solo lo explica. La hoja del procesador de
+audio especifica una tensión de entrada de 5 a 17~V \cite{DaisySeed} y el
+montaje le entrega 4,354~V en reposo, medio voltio por debajo del mínimo
+garantizado. El instrumento funciona en esas condiciones, con los raíles
+internos de 3,3~V en 3,256 y 3,232~V, pero funciona fuera de especificación, y
+conviene dejarlo escrito así y no como una tolerancia verificada. La corrección
+natural, que no cabía en la ventana de tiempo disponible, es rebajar la
+resistencia serie del filtro y compensar la pérdida de filtrado con capacidad,
+o alimentar esa rama antes del corte del raíl.
+
+Los dos últimos pares de filas confirman lo que necesitaba el
+capítulo~\ref{cap:firmware-audio}. El raíl analógico está a 3,232~V y el cursor
+de un potenciómetro llevado a sus topes da 3,227 y 0,004~V. El firmware ve el
+recorrido completo del conversor sin zonas muertas y con la referencia del
+conversor y el fondo de escala del divisor colgando de la misma tensión, que es
+la cancelación de deriva que buscaba el apartado~\ref{sec:panel}.
+
+El rizado se midió en alterna sobre el raíl de 5~V y la entrada del procesador
+de audio, y en ambos la lectura es de 0~mV. Eso no significa que no haya ruido,
+sino que el rizado dentro de la banda que el aparato integra está por debajo de
+su suelo de medida. La cota sigue siendo útil
+porque descarta el zumbido de red acoplado a la salida. Verificar el filtro de
+la rama de audio, cuyo codo se situó en 482~Hz en el
+apartado~\ref{sec:alimentacion}, exigiría un osciloscopio y queda sin hacer.
+
+\section{Consumo}
+\label{sec:consumo}
+
+El consumo del conjunto se recoge en la Tabla~\ref{tab:consumo}.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Consumo del instrumento.}
+    \label{tab:consumo}
+    \begin{tabular}{lc}
+        \toprule
+        \textbf{Medida} & \textbf{Valor} \\
+        \midrule
+        Conjunto, amperímetro en serie            & 0,42~A \\
+        Procesador de audio, deducido de la caída & 130--165~mA \\
+        Pico de arranque                          & no capturable \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+La medida se realizó puenteando con el amperímetro el interruptor
+abierto, y el conjunto completo consume 0,42~A frente a los 600~mA que estimaba
+el apartado~\ref{sec:alimentacion}, así que el alimentador de 3~A queda con más
+margen del previsto.
+
+El consumo del procesador de audio no se midió directamente sino que se dedujo,
+aprovechando que la resistencia serie de su rama hace de derivación. Con las
+caídas de la Tabla~\ref{tab:tensiones}, de 0,432 a 0,543~V sobre 3,3~$\Omega$
+nominales, salen de 130 a 165~mA. El rango no es incertidumbre de medida sino
+consumo real, porque la placa consume distinto según lo que el firmware esté
+haciendo en cada momento. La deducción usa además el valor nominal de la
+resistencia. Con los 2,9~$\Omega$ medidos las cifras subirían alrededor de un
+catorce por ciento, que es hasta dónde llega la precisión de este método.
+
+El pico de corriente en el arranque, que es el que justifica el condensador de
+reserva, no se pudo medir. Es un transitorio de milisegundos y un multímetro
+promedia. Queda sin verificar, aunque el arranque sí se comprobó por su efecto,
+con diez encendidos de diez correctos.
+
+\section{La salida de audio}
+\label{sec:audio}
+
+Las medidas de audio se tomaron en el jack, sin carga conectada, con el
+multímetro en alterna. La Tabla~\ref{tab:audio} las recoge.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Salida de audio en el jack sin carga. Los valores en dBV se
+             refieren a un voltio eficaz.}
+    \label{tab:audio}
+    \begin{tabular}{lcc}
+        \toprule
+        \textbf{Magnitud} & \textbf{Valor} & \textbf{Equivalente} \\
+        \midrule
+        Nivel de salida, pulsación suave      & 85~mV eficaces    & --- \\
+        Nivel de salida, velocidad máxima     & 198,7~mV eficaces & $-14$~dBV \\
+        Componente continua en la salida      & 1~mV              & --- \\
+        Suelo de ruido, alterna               & 4,3~mV eficaces   & $-47,3$~dBV \\
+        Suelo de ruido, continua              & 0,66~mV           & --- \\
+        Suelo del multímetro, puntas en corto & 0~mV              & --- \\
+        Relación señal-ruido                  & 33~dB             & --- \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+Las dos primeras filas son el mismo resultado con dos estímulos distintos,
+porque el nivel de salida depende de la velocidad de pulsación. Los 85~mV
+corresponden a una pulsación suave y no caracterizan al instrumento; la cifra
+que lo caracteriza es la de velocidad máxima, 198,7~mV eficaces, es decir
+$-14$~dBV. Eso es nivel de línea de consumo, del orden de lo que entrega
+cualquier reproductor doméstico, así que el instrumento se conecta directamente
+a una entrada de línea sin adaptación y sin riesgo de saturarla. La componente
+continua es de un milivoltio, despreciable, y confirma que la salida no
+arrastra ningún desequilibrio capaz de desplazar un altavoz de su posición de
+reposo.
+
+El suelo de ruido merece un apunte por el modo en que se comprobó. Con el
+instrumento encendido y sin tocar ninguna nota, el jack entrega 4,3~mV eficaces
+en alterna y 0,66~mV en continua. Cortocircuitando las puntas y volviendo a
+leer se obtienen 0~mV, así que el multímetro no aporta nada al resultado y esos
+4,3~mV salen del instrumento.
+
+De ahí sale una relación señal-ruido de 33~dB. Del ruido solo se contabiliza la
+porción que cae en la banda del aparato, mientras que lo que se sospecha
+dominante, el acoplamiento de la conmutación de las tres placas y de la
+pantalla, vive muy por encima de ella. Lo honesto es decir que el instrumento
+tiene al menos 33~dB entre 40~Hz y 1~kHz, y que la cifra de ancho de banda
+completo es peor y no se ha medido. Quedan sin medir la distorsión armónica y
+la respuesta en frecuencia, que están fuera del alcance de un multímetro.
+
+\section{Incidencias detectadas}
+\label{sec:incidencias}
+
+La verificación destapó tres incidencias. Dos son fallos del aparato y la
+tercera es una consecuencia de diseño que solo se manifiesta con el panel real
+montado. Ninguna de las tres ha podido cerrarse. Se recogen aquí juntas, con el
+mismo esquema de síntoma, comprobaciones y estado, en lugar de repartirlas por
+las secciones de medida, para que quede en un solo sitio lo que el instrumento
+tiene pendiente.
+
+\subsection*{Los bloqueos del procesador de audio}
+
+Tocando notas y moviendo mandos, el instrumento se congela: deja de responder
+al teclado y al panel y no revive apagando y volviendo a encender de inmediato,
+aunque sí tras dejarlo un rato largo sin tensión. Ese detalle, que no baste con
+el ciclo de encendido y haya que desconectarlo un tiempo, es lo único que
+distingue el fallo de un cuelgue corriente del firmware.
+
+Con un multímetro se puede comprobar lo evidente, y eso es lo que se hizo. Con
+el instrumento colgado, la entrada del procesador de audio estaba a 4,5~V y su
+raíl digital a 3,255~V, la misma alimentación que en marcha, así que no se
+había quedado sin tensión; en esas mismas condiciones el arranque salió bien
+diez veces de diez. La placa no consumía más que funcionando y el encapsulado
+estaba apenas tibio, de modo que tampoco había nada conduciendo de más. Entre
+cada raíl de 3,3~V y su masa hay 1,6~k$\Omega$ con la placa sin alimentar, que
+sobre 3,3~V son dos miliamperios y no un cortocircuito, y la placa se llegó a
+sacar del zócalo para medirla por separado con el mismo resultado. La entrada
+de notas quedó descartada sin medir nada, porque el fabricante declara
+tolerante a 5~V la patilla de recepción del USART1 \cite{DaisySeed}.
+
+Lo único anómalo apareció al mirar el bus de la pantalla durante un bloqueo,
+con la línea de reloj a 0~V y la de datos a 0,8~V, es decir, el bus caído. Eso
+encaja con el mecanismo que describe el apartado~\ref{sec:oled}, donde un
+refresco sobre un bus colgado congela el bucle principal durante segundos y con
+él la atención al \gls{midi} y al \gls{spi}, y es la razón de que el firmware
+lleve dos medidas contra ello, el vigilante que apaga la pantalla tras tres
+refrescos anormalmente largos y la maniobra de desbloqueo del arranque. Ninguna
+de las dos ha bastado y el instrumento se sigue colgando.
+
+Hay además dos observaciones que no encajan con esa explicación. En un bloqueo
+distinto las dos líneas del bus estaban a 3,246~V, limpias y en reposo, con la
+alimentación correcta, y aun así el firmware no arrancaba. Y en otra ocasión el
+raíl digital de 3,3~V se fue a 0~V con la tensión de entrada presente, es decir,
+con el regulador alimentado y sin salida, situación que el botón de reinicio no
+levanta porque actúa sobre el microcontrolador y no sobre el regulador, y de la
+que el instrumento salió solo tras quedarse un rato desconectado. Con un
+multímetro no se llega más lejos, ya que ver qué ocurre en el instante del
+cuelgue exigiría un osciloscopio. La causa no está encontrada y la incidencia
+queda abierta.
+
+\subsection*{El display}
+
+La pantalla \gls{oled} del panel no llegó a funcionar de forma continuada en el
+montaje definitivo. El firmware la trata como opcional gracias al sondeo de
+arranque del apartado~\ref{sec:oled}, así que el instrumento suena igual sin
+ella y lo que se pierde es la realimentación visual de los mandos.
+
+Lo comprobable con el multímetro está comprobado y sale bien. Los cuatro hilos
+dan continuidad, incluida la masa. Los dos resistores de polarización están
+puestos y miden 9,85~k$\Omega$ desde cada línea del bus al raíl digital. Sin
+alimentar, cada línea da 8~k$\Omega$ contra la masa digital, lejos de un
+cortocircuito. Y la alimentación que llega al módulo son 3,3~V correctos. Con
+todo eso en orden, las dos líneas del bus se quedan en 0~V. Que puedan subir
+está visto, porque en las pocas ocasiones en que el bus apareció sano se
+midieron 3,246~V en ambas, de modo que algo las sujeta abajo la mayor parte del
+tiempo.
+
+Sustituir el módulo por uno nuevo dio exactamente el mismo comportamiento, y
+dos módulos distintos no fallan igual por azar, así que la avería no está en el
+display. La maniobra de desbloqueo del apartado~\ref{sec:oled} tampoco lo
+resuelve. Descartados el cable, los resistores y el propio módulo, lo que queda
+al otro lado del bus es el procesador de audio, pero confirmarlo exigía
+instrumentación de la que no se disponía. Agotada la ventana de acceso al
+hardware, la incidencia queda caracterizada y no reparada, y lo que se sabe es
+dónde no está el fallo, no dónde está.
+
+\subsection*{El foco del display}
+
+El cursor del potenciómetro de sostenimiento tiembla en torno a un dos por
+ciento de su recorrido, bastante más de lo que se supuso al fijar el umbral con
+el que un mando roba el foco de la pantalla. El camino analógico lo explica sin
+dificultad, ya que se trata de un cursor de diez kiloohmios cuya señal recorre
+un mazo de treinta y nueve hilos hasta la placa, y el filtrado del
+apartado~\ref{sec:panel-fisico} no basta para ese canal en concreto. Con un
+umbral por debajo de ese temblor el sostenimiento se queda con el foco de forma
+permanente y ningún otro mando llega a mostrarse.
+
+El umbral del apartado~\ref{sec:oled} está fijado en el tres por ciento por
+esta razón, por encima del ruido que entrega el panel real, y subirlo no cuesta
+resolución de ajuste porque solo decide a qué canal mira la pantalla y no cómo
+se aplica el valor. Que ese margen baste no ha podido comprobarse sobre el
+aparato, porque la pantalla no llega a encenderse, así que la incidencia queda
+anotada y abierta junto con la anterior.
+
+\section{Balance de la verificación}
+\label{sec:balance}
+
+Conviene terminar separando tres montones, porque el valor de un capítulo de
+medidas está en no mezclarlos.
+
+Queda verificado que la cadena de datos es exacta de extremo a extremo, con la
+interpolación equivalente a su referencia dentro de 1~\gls{lsb}, el transporte
+sin una sola muestra alterada y las 128 notas afinadas. Queda verificado que
+el instrumento no tiene cortocircuitos ni fallos de aislamiento, que la masa es
+común a las tres placas, que el raíl de 5~V no se hunde al cargarlo, que los
+raíles internos de 3,3~V son correctos, que los canales del panel recorren el
+fondo de escala completo, que el conjunto consume 0,42~A y que la salida
+entrega 198,7~mV eficaces de nivel de línea con un milivoltio de continua. La
+pérdida de tensión que el capítulo~\ref{cap:hardware} dejó pendiente era, en
+efecto, resistencia de contacto de la placa de prototipado, y soldar la eliminó.
+
+Queda medido solo como cota lo que la banda del multímetro no alcanza, esto es,
+el rizado de los raíles y la relación señal-ruido de 33~dB. Y queda deducido,
+que no medido, el consumo del procesador de audio, entre 130 y 165~mA.
+
+Queda sin resolver lo que no cabía en la ventana disponible. El procesador de
+audio funciona medio voltio por debajo de la tensión de entrada que garantiza
+su fabricante, y esta es la única de las cuatro con la causa identificada y la
+corrección propuesta. El display no llega a funcionar, y lo comprobado dice
+dónde no está el fallo, ni en el cable, ni en los resistores, ni en el módulo,
+pero no dónde está. Los bloqueos siguen apareciendo pese a las dos medidas que
+el firmware lleva contra ellos, y lo que se puede medir con un multímetro
+descarta las explicaciones sencillas sin dar con la buena. Y el umbral del foco
+no ha podido comprobarse en marcha, porque la pantalla no se enciende. Las
+cuatro quedan abiertas para una revisión posterior del instrumento, junto con
+las medidas que este capítulo no ha podido tomar, el pico de arranque, la
+distorsión y la respuesta en frecuencia. Todas ellas exigen instrumentación de
+la que no se dispuso, así que la primera partida de una continuación de este
+trabajo no es material sino un osciloscopio. El
+capítulo siguiente valora qué significa todo esto para los objetivos que se
+fijaron al principio.
