@@ -1,22 +1,9 @@
 """
 2_build_dataset.py
-Construye el dataset de entrenamiento del VAE a partir del corpus AKWF.
-
-Pipeline por onda:
-  1. Cargar el .wav y normalizar a float en [-1, 1] segun su tipo de dato.
-  2. Remuestrear a 1024 muestras con scipy.signal.resample (FFT: preserva el
-     cierre del ciclo, a diferencia de truncar a 512).
-  3. Eliminar la componente DC (restar la media).
-  4. Alinear la fase: rotar el ciclo para que el armonico fundamental quede a
-     fase 0, de modo que todas las ondas arranquen igual.
-  5. Normalizar la amplitud dividiendo por el pico absoluto.
-
-Salida (en OUTPUT_DIR):
-  akwf_processed.npy  -> (N, 1024) float32, las ondas procesadas.
-  akwf_families.npy   -> (N,)      str,     la familia (carpeta) de cada onda.
-
-Ajusta LIMITE a un numero pequeno para validar el pipeline visualmente y luego
-ponlo a None para procesar todo el corpus.
+Construye el dataset de entrenamiento del VAE a partir del corpus AKWF: cada
+.wav se pasa a float, se remuestrea a 1024 muestras (FFT, preserva el cierre
+del ciclo), se le quita el DC, se alinea el fundamental a fase 0 y se normaliza
+por pico. Salida: akwf_processed.npy (N, 1024) y akwf_families.npy (N,).
 """
 
 import os
@@ -28,18 +15,11 @@ import matplotlib.pyplot as plt
 # --------------------------------------------------------------------------- #
 # Configuracion
 # --------------------------------------------------------------------------- #
-# Las rutas se derivan de la ubicacion de este script para que funcionen igual
-# en Windows o WSL sin tocar nada. Con el script en  ml/scripts/  apuntan a:
-#   entrada:  ml/dataset/AKWF   (subcarpetas AKWF_0001, AKWF_0002, ...)
-#   salida:   ml/dataset/       (akwf_processed.npy y akwf_families.npy)
+# Rutas relativas a este script: entrada ml/dataset/AKWF, salida ml/dataset/.
 SCRIPT_DIR   = os.path.dirname(os.path.abspath(__file__))
 DATASET_DIR  = os.path.normpath(os.path.join(SCRIPT_DIR, "..", "dataset"))
 DATASET_PATH = os.path.join(DATASET_DIR, "AKWF")   # ml/dataset/AKWF
 OUTPUT_DIR   = DATASET_DIR                          # ml/dataset
-
-# Alternativa: si prefieres fijar la ruta a mano, descomenta y ajusta:
-# DATASET_PATH = r"M:\Users\alsav_9f696wk\Desktop\TFG\ml\dataset\AKWF"
-# OUTPUT_DIR   = r"M:\Users\alsav_9f696wk\Desktop\TFG\ml\dataset"
 
 TARGET_LEN   = 1024          # muestras por ciclo tras el remuestreo
 LIMITE       = None            # no maximo de ondas a procesar (None = todas)

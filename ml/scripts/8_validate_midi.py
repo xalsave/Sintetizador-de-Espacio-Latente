@@ -1,46 +1,9 @@
 """
 8_validate_midi.py
-Valida de forma objetiva la conversion nota MIDI -> frecuencia del Daisy (S8),
-no solo de oido.
-
-Idea
-----
-El Daisy usa una unica funcion note_to_hz() tanto para tocar en vivo (Note On ->
-osc.SetFreq) como para volcar por serie la tabla de las 128 notas (MIDI_SELFTEST).
-Asi que validar esa tabla valida directamente el camino de sonido real.
-
-Con MIDI_SELFTEST=1 el Daisy imprime, al arrancar y cada 3 s, un bloque:
-
-    NOTE_TABLE_BEGIN sr_milli=<int> len=1024
-    <note> <hz_milli> <pinc_micro>
-    ...   (128 lineas, notas 0..127)
-    NOTE_TABLE_END
-
-Este script lee ese bloque (de un fichero capturado o directo por --port) y para
-cada nota comprueba dos cosas contra la referencia teorica:
-
-  1. hz    == mtof(note) = 440 * 2^((note-69)/12)          -> conversion nota->Hz
-  2. pinc  == hz * len / sr   (fase por muestra del oscilador)
-
-usando la sample rate REAL que el propio Daisy reporto (sr_milli), no un 48000
-asumido: asi la comprobacion de phase_inc es exacta aunque el codec no corra a
-48000.000 clavados.
-
-Uso
----
-  A) Desde un fichero capturado del serie del Daisy:
-       python 8_validate_midi.py --file daisy_midi.txt
-
-  B) Directo por puerto serie (captura ~4 s, 1 bloque completo seguro):
-       python 8_validate_midi.py --port COM7
-
-Captura manual del serie a fichero (ejemplo, ajustar COM):
-  python -c "import serial;p=serial.Serial('COM7',115200,timeout=5);\
-open('daisy_midi.txt','wb').write(p.read(60000))"
-
-Tolerancias: 1 milihercio en Hz y 2 micro-unidades en phase_inc (redondeo del
-entero que imprime el Daisy). No requiere ningun fichero del repo: la referencia
-es puramente la formula MIDI.
+Valida la conversion nota MIDI -> Hz -> phase_inc del Daisy: lee el bloque
+NOTE_TABLE_BEGIN..END que el firmware vuelca con MIDI_SELFTEST=1 (128 notas,
+con la sample rate real reportada) y lo compara con mtof y con hz*len/sr.
+  python 8_validate_midi.py --file daisy_midi.txt     (o --port COM7)
 """
 
 import os
