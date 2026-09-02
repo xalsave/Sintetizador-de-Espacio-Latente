@@ -1,2 +1,120 @@
 \chapter{Conclusiones y trabajo futuro}
 \label{cap:conclusiones}
+
+\section{Síntesis y aportación del trabajo}
+
+El trabajo entrega una cadena completa y cerrada, que empieza en un conjunto
+público de formas de onda y termina en una señal de línea en un conector de
+3,5~mm. Entre esos dos extremos hay un autoencoder variacional entrenado en el
+ordenador, una rejilla de 256 tablas horneada a partir
+de su decodificador, tres microcontroladores con una responsabilidad única cada
+uno, dos enlaces de datos verificados muestra a muestra y una carcasa que lo
+alberga todo. El reparto que hace posible ese encadenamiento se describe en el
+apartado~\ref{sec:arquitectura}. Lo que ese conjunto demuestra es que un espacio
+tímbrico aprendido se puede recorrer con el dedo sobre hardware de catálogo, con
+83,82~euros de materiales según el Apéndice~\ref{anx:presupuesto}, sin un
+ordenador delante y sin ningún circuito integrado hecho a medida.
+
+Conviene dejar dicho con precisión qué papel juega aquí el aprendizaje
+automático, porque es donde más fácil resulta exagerar. En el instrumento no se
+ejecuta ninguna red neuronal. El codificador solo intervino durante el
+entrenamiento y el decodificador se ejecutó fuera de línea para hornear la
+rejilla, de modo que en marcha solo hay consulta de tabla e interpolación. La
+inteligencia está en el contenido de las tablas y no en el código que las lee,
+ya que el hecho de que celdas vecinas suenen emparentadas y de que cruzar el
+plano produzca una transición tímbrica coherente es producto del latente
+aprendido y no se obtiene a mano. Precalcular fue una estrategia de despliegue y
+no una renuncia, y el motivo está en el tiempo de cálculo y no en el espacio,
+tal como se razonó en el apartado~\ref{sec:alternativas}. La memoria, de hecho,
+no distinguía entre las dos opciones. La rejilla ocupa 512~kB
+(apartado~\ref{sec:rejilla}) y el decodificador, con sus cerca de 592.000
+parámetros, ocuparía del orden de 590~kB cuantizado a ocho bits. Lo que la
+rejilla compra es un coste de acceso constante y conocido. Lo que paga a cambio
+es una resolución del plano congelada en el momento de hornearla.
+
+\section{Cumplimiento de los objetivos}
+
+Los tres primeros objetivos específicos corresponden a la fase de preparación y
+quedan cumplidos. El conjunto de datos homogéneo se construyó resolviendo el
+remuestreo, la normalización de amplitud y la alineación de fase
+(apartado~\ref{sec:preprocesado}). El autoencoder variacional comprime cada onda
+a una coordenada de dos dimensiones, y su plano resultó continuo y bien
+aprovechado (apartado~\ref{sec:latente}), con la diversidad confirmada después
+sobre la propia rejilla (apartado~\ref{sec:demo}). Y esa rejilla se horneó y se
+exportó en un formato que el firmware compila directamente
+(apartado~\ref{sec:rejilla}).
+
+Los tres siguientes son de firmware y también quedan cumplidos. El motor
+sustituye la tabla en reproducción sin discontinuidad audible, con una
+transición cuyo rizado de pico se midió en 0,34~dB
+(apartado~\ref{sec:crossfade}). La comunicación entre las tres placas quedó
+definida y verificada, con la interpolación equivalente a su referencia dentro
+de 1~\gls{lsb} y el transporte por \gls{spi} sin una sola muestra alterada
+(apartado~\ref{sec:validacion-datos}). El control de nota y dinámica por
+\gls{midi} funciona, con las 128 notas dentro de tolerancia y el la central en
+440~Hz sobre el montaje definitivo, y el panel analógico recorre el fondo de
+escala completo en todos sus canales (apartado~\ref{sec:tensiones}). Este último
+objetivo se cumple con una salvedad que no conviene disimular, y es que la
+realimentación visual de los mandos no llegó a funcionar sobre el aparato
+montado (apartado~\ref{sec:incidencias}).
+
+Quedan el objetivo de validar cada etapa contra una referencia calculada en el
+ordenador, que atraviesa todo el desarrollo y se recoge reunido en el
+capítulo~\ref{cap:pruebas}, y el de integrar el conjunto en un prototipo físico
+alimentado desde una fuente única, que consume 0,42~A y entrega 198,7~mV
+eficaces de nivel de línea (apartados~\ref{sec:consumo} y~\ref{sec:audio}).
+También este último lleva salvedad, y es que el procesador de audio trabaja
+medio voltio por debajo de la tensión de entrada mínima que garantiza su
+fabricante, con la causa identificada y la corrección propuesta
+(apartado~\ref{sec:balance}). Con esas dos salvedades sobre la mesa, el objetivo
+general se considera alcanzado. Hay un instrumento autónomo que permite explorar
+un espacio tímbrico aprendido con una pantalla táctil y una entrada \gls{midi}
+estándar.
+
+\section{Aprendizajes del proyecto}
+
+Por encima de cualquier resultado concreto, el trabajo ha permitido aplicar
+sobre un mismo objeto contenidos que en el grado se estudian por separado. El
+aprendizaje automático entrena el modelo, el procesado de señal prepara las
+ondas y las reproduce, los sistemas embebidos reparten la carga entre tres
+procesadores, la electrónica analógica resuelve el panel y la alimentación, los
+protocolos de comunicación unen las placas y el diseño mecánico las encierra en
+algo que cabe en las manos. Que todas esas materias tuvieran que encajar en un
+único aparato, y no cada una en su práctica, ha sido lo más satisfactorio del
+proyecto, y es la razón por la que se eligió este tema y no otro más acotado.
+
+\section{Trabajo futuro}
+
+Las líneas de continuación salen todas de una limitación conocida, y conviene
+enunciarlas con ella delante. La primera es la que el capítulo~\ref{cap:diseno}
+dejó abierta a propósito. El decodificador puede llegar a ejecutarse a bordo del
+ESP32-S3, y el reparto elegido lo permite sin tocar el firmware del procesador
+de audio, que seguiría recibiendo exactamente lo mismo
+(apartado~\ref{sec:alternativas}). Antes de intentarlo conviene saber si merece
+la pena, y esa comprobación no necesita hardware. Como el decodificador no es
+lineal, interpolar entre dos de sus salidas no equivale a decodificar el punto
+latente intermedio, de modo que comparar ambas cosas en puntos intermedios daría
+la cifra de error de aproximación que hoy no existe, y con ella se sabría si una
+rejilla de $16 \times 16$ basta. La segunda línea es la limitación de banda de
+las tablas, que quedó fuera del alcance porque corregirla multiplica el volumen
+de datos embarcado por el número de versiones filtradas que haya que almacenar
+(apartado~\ref{sec:parametros}), y que se resolvería eligiendo la adecuada según
+el registro de la nota. La tercera es la fidelidad del cuello de botella de dos
+dimensiones, que redondea los flancos verticales
+(apartado~\ref{sec:reconstruccion}) y cuya ampliación obligaría a replantear el
+control táctil, que es precisamente lo que fijó esas dos dimensiones.
+
+Antes que ninguna de ellas está la revisión del propio aparato. Las tres
+incidencias que la verificación dejó abiertas siguen abiertas
+(apartado~\ref{sec:incidencias}). Falta además levantar con
+osciloscopio y analizador lo que un multímetro no alcanza, esto es, la
+distorsión, la respuesta en frecuencia y el pico de corriente del arranque
+(apartado~\ref{sec:balance}). La polifonía, descartada desde el principio, solo
+tiene sentido plantearla cuando todo lo anterior esté resuelto.
+
+El prototipo es lo más perecedero de todo esto. Lo que permanece no está dentro
+de la caja, sino dentro de mi cabeza. La experiencia de haberlo hecho, de haberlo 
+pensado y de haberlo escrito es lo que queda, y es lo que me permitirá abordar con
+más seguridad los próximos proyectos. Proyectos será más ambiciosos, proyectos que espero que me dejen
+con la misma sensación de haber aprendido algo que no estaba en ningún libro ni en ninguna clase. 
+
