@@ -47,6 +47,13 @@ Sobre esa base se fijaron los requisitos que el diseño debía cumplir:
           caber en placas de desarrollo disponibles en el mercado.
 \end{itemize}
 
+A estos requisitos se suman los condicionantes normativos y de especificación
+que impone el material elegido. La entrada de notas sigue la especificación
+\gls{midi} 1.0, y los rangos de tensión, la tolerancia de los pines y el techo
+de la frecuencia de corte salen de las hojas de características de las placas y
+de la documentación de la biblioteca de audio. Cada uno se cita en el capítulo
+en que se aplica.
+
 \section{Alternativas consideradas}
 \label{sec:alternativas}
 \hypertarget{RE2.1}{}\label{RE2.1}
@@ -68,7 +75,7 @@ trabajar a frecuencia de control, ejecutar el decodificador en cada toque
 introduce un tiempo de cálculo variable que complica el modelo. Sobre un procesador
 que además tiene que atender la comunicación con las otras dos placas, esto se traduce 
 en posibles microinterrupciones en el audio. La rejilla precalculada convierte ese cálculo
-en un acceso a memoria y una interpolación, de coste conocido y constante.El trabajo más cercano
+en un acceso a memoria y una interpolación, de coste conocido y constante. El trabajo más cercano
 hace lo mismo por el mismo motivo, y allí la limitación aparece incluso sobre una máquina 
 con \gls{gpu} dedicada \cite{Hantrakul2018}.
 
@@ -205,6 +212,7 @@ ya están ordenados.
 
 \section{Parámetros de diseño}
 \label{sec:parametros}
+\hypertarget{RE1.2c}{}\label{RE1.2c}
 
 La Tabla~\ref{tab:parametros} recoge los valores que se fijaron al principio y
 que no se modificaron después, porque condicionan a la vez el entrenamiento, el
