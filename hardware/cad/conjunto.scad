@@ -42,9 +42,9 @@ show_modulos = true;   // pantalla de la CYD y del OLED, en negro
 /* [4. Cotas de la caja -- DEBEN COINCIDIR con caja.scad] */
 box_w    = 186;
 panel_d  = 116;
-h_front  = 30;
+h_front  = 44;
 h_back   = 62;
-bay_d    = 30;
+bay_d    = 72;
 panel_t  = 3.4;
 
 /* [Hidden] */

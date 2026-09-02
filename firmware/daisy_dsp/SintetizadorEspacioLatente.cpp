@@ -553,9 +553,12 @@ enum PotIdx
 // tabla de correspondencia con los pines fisicos en la cabecera del fichero.
 static const uint8_t POT_PIN_D[POT_COUNT] = {15, 16, 23, 24, 25, 20, 22};
 
-// Rangos de mapeo. Tiempos y frecuencia van en escala EXPONENCIAL porque el oido
-// percibe las dos logaritmicamente: un pote lineal sobre un rango lineal dejaria
-// todo el recorrido util apelotonado en el primer cuarto de giro.
+// Rangos de mapeo. La frecuencia de corte va en escala EXPONENCIAL porque el
+// oido percibe la altura logaritmicamente. Los tres tiempos del ADSR pasaron a
+// escala LINEAL el 1 sep 2026 por decision del autor. Queda anotada la
+// contrapartida: con recorrido lineal sobre 1 ms - 2 s, el tramo de 1 a 100 ms
+// -- el que decide el caracter de un ataque percusivo -- cae dentro del primer
+// 5 % del giro del mando.
 static const float ATTACK_MIN  = 0.001f;   // 1 ms
 static const float ATTACK_MAX  = 2.0f;     // 2 s
 static const float DECAY_MIN   = 0.005f;   // 5 ms
@@ -602,6 +605,12 @@ static inline float map_exp(float x, float lo, float hi)
     return lo * powf(hi / lo, x);
 }
 
+// Mapeo lineal de 0..1 al rango [lo, hi]. Lo usan los tres tiempos del ADSR.
+static inline float map_lin(float x, float lo, float hi)
+{
+    return lo + (hi - lo) * x;
+}
+
 // Decodifica el selector ON-OFF-ON leido en el pin fisico 29. Las tres tensiones
 // las fija el divisor de dos resistencias de 10k descrito en veroboard.md:
 //   arriba (a 3V3A) = 3,3 V -> HPF   centro (abierto) = 1,65 V -> BPF
@@ -643,12 +652,12 @@ static void controls_update()
 
     if(fabsf(ctrl[POT_ATTACK] - last[0]) > EPS)
     {
-        env.SetAttackTime(map_exp(ctrl[POT_ATTACK], ATTACK_MIN, ATTACK_MAX));
+        env.SetAttackTime(map_lin(ctrl[POT_ATTACK], ATTACK_MIN, ATTACK_MAX));
         last[0] = ctrl[POT_ATTACK];
     }
     if(fabsf(ctrl[POT_DECAY] - last[1]) > EPS)
     {
-        env.SetDecayTime(map_exp(ctrl[POT_DECAY], DECAY_MIN, DECAY_MAX));
+        env.SetDecayTime(map_lin(ctrl[POT_DECAY], DECAY_MIN, DECAY_MAX));
         last[1] = ctrl[POT_DECAY];
     }
     if(fabsf(ctrl[POT_SUSTAIN] - last[2]) > EPS)
@@ -658,7 +667,7 @@ static void controls_update()
     }
     if(fabsf(ctrl[POT_RELEASE] - last[3]) > EPS)
     {
-        env.SetReleaseTime(map_exp(ctrl[POT_RELEASE], RELEASE_MIN, RELEASE_MAX));
+        env.SetReleaseTime(map_lin(ctrl[POT_RELEASE], RELEASE_MIN, RELEASE_MAX));
         last[3] = ctrl[POT_RELEASE];
     }
 }
@@ -724,10 +733,28 @@ static bool oled_present = false;
 // entero (1 kB) y bloquea ~10 ms a 1 MHz.
 static const uint32_t OLED_PERIOD_MS = 80;
 
-// Cuanto tiene que moverse un mando para robar el foco: 1 % del recorrido, muy
-// por encima del ruido del ADC ya suavizado y muy por debajo de un giro
-// intencionado. Sin este umbral el foco saltaria solo entre canales.
-static const float MOVE_EPS = 0.01f;
+// Cuanto tiene que moverse un mando para robar el foco. Era el 1 %, y se subio
+// al 3 % el 1 sep 2026: medido sobre el montaje final, el cursor de sustain
+// tiembla ~2 % del recorrido, cruzaba el umbral continuamente y se quedaba con
+// el foco de forma permanente, de modo que ningun otro mando llegaba a
+// mostrarse. Subir el umbral NO pierde resolucion de ajuste: MOVE_EPS solo
+// decide a que canal MIRA el display, y ctrl[] se aplica siempre entero.
+static const float MOVE_EPS = 0.03f;
+
+// Vigilancia del refresco. Un Update() sano cuesta ~10 ms, pero el transporte
+// I2C de libDaisy espera hasta 1 s por cada pagina del framebuffer, asi que con
+// el bus colgado un solo refresco congela el bucle principal segundos enteros y
+// con el se paran el MIDI y el SPI: eso es lo que hacia que un display averiado
+// se llevara por delante el instrumento entero. Al tercer refresco que pase de
+// 100 ms el display se apaga solo y no se vuelve a tocar el bus en toda la
+// sesion. Se prefiere perder la pantalla a perder el instrumento.
+static const uint32_t OLED_STALL_MS  = 100;
+static const int      OLED_STALL_MAX = 3;
+static int            oled_stalls    = 0;
+
+// Margenes verticales del area de dibujo de las dos graficas.
+static const uint8_t GRAPH_TOP = 14;
+static const uint8_t GRAPH_BOT = 60;
 
 static int   focus = POT_CUTOFF;    // parametro mostrado; el corte es el de arranque
 static float focus_ref[POT_COUNT];  // valor de cada canal la ultima vez que movio
@@ -793,12 +820,12 @@ static FocusView focus_view()
         case POT_ATTACK:
             v.name = "ATTACK";
             v.unit = fmt_time(v.value,
-                              map_exp(ctrl[POT_ATTACK], ATTACK_MIN, ATTACK_MAX));
+                              map_lin(ctrl[POT_ATTACK], ATTACK_MIN, ATTACK_MAX));
             break;
         case POT_DECAY:
             v.name = "DECAY";
             v.unit = fmt_time(v.value,
-                              map_exp(ctrl[POT_DECAY], DECAY_MIN, DECAY_MAX));
+                              map_lin(ctrl[POT_DECAY], DECAY_MIN, DECAY_MAX));
             break;
         case POT_SUSTAIN:
             v.name = "SUSTAIN";
@@ -808,7 +835,7 @@ static FocusView focus_view()
         case POT_RELEASE:
             v.name = "RELEASE";
             v.unit = fmt_time(v.value,
-                              map_exp(ctrl[POT_RELEASE], RELEASE_MIN, RELEASE_MAX));
+                              map_lin(ctrl[POT_RELEASE], RELEASE_MIN, RELEASE_MAX));
             break;
         case POT_CUTOFF:
             v.name = "CUTOFF";
@@ -843,6 +870,98 @@ static void focus_update()
     }
 }
 
+// Envolvente en cuatro tramos. El sustain es un nivel y no un tiempo, asi que se
+// le da un ancho fijo y los tres tramos que si son tiempos se reparten
+// proporcionalmente lo que queda. Los tiempos se leen ya mapeados, con el mismo
+// map_lin que usa el audio, para que la figura sea la que de verdad suena.
+static void draw_adsr()
+{
+    const float a = map_lin(ctrl[POT_ATTACK], ATTACK_MIN, ATTACK_MAX);
+    const float d = map_lin(ctrl[POT_DECAY], DECAY_MIN, DECAY_MAX);
+    const float r = map_lin(ctrl[POT_RELEASE], RELEASE_MIN, RELEASE_MAX);
+    const float s = ctrl[POT_SUSTAIN];
+
+    const int SUS_W = 22;
+    const int avail = 124 - SUS_W;   // 2 px de margen a cada lado
+
+    float tsum = a + d + r;
+    if(tsum < 1e-6f)
+        tsum = 1e-6f;
+
+    int wa = (int)(avail * (a / tsum) + 0.5f);
+    int wd = (int)(avail * (d / tsum) + 0.5f);
+    int wr = avail - wa - wd;
+    if(wr < 0)
+        wr = 0;
+
+    const int ysus = GRAPH_BOT - (int)((GRAPH_BOT - GRAPH_TOP) * s + 0.5f);
+
+    const int x0 = 2;
+    const int x1 = x0 + wa;
+    const int x2 = x1 + wd;
+    const int x3 = x2 + SUS_W;
+    const int x4 = x3 + wr;   // <= 126 por construccion, nunca se sale
+
+    display.DrawLine((uint_fast8_t)x0, GRAPH_BOT, (uint_fast8_t)x1, GRAPH_TOP, true);
+    display.DrawLine((uint_fast8_t)x1, GRAPH_TOP, (uint_fast8_t)x2, (uint_fast8_t)ysus, true);
+    display.DrawLine((uint_fast8_t)x2, (uint_fast8_t)ysus, (uint_fast8_t)x3, (uint_fast8_t)ysus, true);
+    display.DrawLine((uint_fast8_t)x3, (uint_fast8_t)ysus, (uint_fast8_t)x4, GRAPH_BOT, true);
+}
+
+// Respuesta del filtro, esquematica: banda plana, pico de resonancia sobre el
+// corte y pendiente. La posicion del corte sale directa del valor del mando sin
+// volver a tomar logaritmos, porque map_exp ya es exponencial y por tanto el eje
+// logaritmico de frecuencia es lineal en ctrl[POT_CUTOFF].
+static void draw_filter()
+{
+    int xc = 2 + (int)(122.f * ctrl[POT_CUTOFF] + 0.5f);
+    if(xc < 2)
+        xc = 2;
+    if(xc > 124)
+        xc = 124;
+
+    const int yflat = 34;
+    int       ypk   = yflat - (int)(16.f * ctrl[POT_RES] + 0.5f);
+    if(ypk < GRAPH_TOP)
+        ypk = GRAPH_TOP;
+
+    const int W  = 14;   // ancho de la pendiente
+    int       xl = xc - W;
+    int       xr = xc + W;
+    if(xl < 2)
+        xl = 2;
+    if(xr > 126)
+        xr = 126;
+
+    const uint_fast8_t ul = (uint_fast8_t)xl;
+    const uint_fast8_t uc = (uint_fast8_t)xc;
+    const uint_fast8_t ur = (uint_fast8_t)xr;
+    const uint_fast8_t uf = (uint_fast8_t)yflat;
+    const uint_fast8_t up = (uint_fast8_t)ypk;
+
+    if(filt_type == FILT_LPF)
+    {
+        display.DrawLine(2, uf, ul, uf, true);
+        display.DrawLine(ul, uf, uc, up, true);
+        display.DrawLine(uc, up, ur, GRAPH_BOT, true);
+        display.DrawLine(ur, GRAPH_BOT, 126, GRAPH_BOT, true);
+    }
+    else if(filt_type == FILT_HPF)
+    {
+        display.DrawLine(2, GRAPH_BOT, ul, GRAPH_BOT, true);
+        display.DrawLine(ul, GRAPH_BOT, uc, up, true);
+        display.DrawLine(uc, up, ur, uf, true);
+        display.DrawLine(ur, uf, 126, uf, true);
+    }
+    else   // FILT_BPF
+    {
+        display.DrawLine(2, GRAPH_BOT, ul, uf, true);
+        display.DrawLine(ul, uf, uc, up, true);
+        display.DrawLine(uc, up, ur, uf, true);
+        display.DrawLine(ur, uf, 126, GRAPH_BOT, true);
+    }
+}
+
 static void oled_draw()
 {
     static int  last_focus = -1, last_bar = -1, last_type = -1;
@@ -850,7 +969,8 @@ static void oled_draw()
 
     FocusView v = focus_view();
 
-    // Sin cambios visibles no se toca el bus: el Update() es lo caro.
+    // Sin cambios visibles no se toca el bus: el Update() es lo caro. Con el
+    // panel quieto la funcion sale por aqui y el I2C no se toca en absoluto.
     if(focus == last_focus && v.bar == last_bar && v.type == last_type
        && strcmp(v.value, last_value) == 0)
         return;
@@ -861,27 +981,22 @@ static void oled_draw()
 
     display.Fill(false);
 
+    // Cabecera de una linea con el nombre y el valor del ultimo mando movido. El
+    // numero en fuente grande y la barra de posicion se han retirado: con la
+    // grafica debajo, lo que decian ya esta en la figura, y cada pantalla
+    // distinta era una transferencia mas por un bus que va justo.
+    char head[24];
+    snprintf(head, sizeof(head), "%s %s%s", v.name, v.value, v.unit);
     display.SetCursor(0, 0);
-    display.WriteString(v.name, Font_11x18, true);
+    display.WriteString(head, Font_6x8, true);
 
-    display.SetCursor(0, 22);
-    display.WriteString(v.value, Font_16x26, true);
-
-    // Unidad pegada al numero y alineada por abajo, como en un instrumento real.
-    display.SetCursor((uint16_t)(strlen(v.value) * 16 + 4), 38);
-    display.WriteString(v.unit, Font_7x10, true);
-
-    // Barra con la posicion fisica del mando. Da de un vistazo lo que el numero
-    // no dice: cuanto recorrido queda, que en una escala exponencial no se
-    // deduce del valor.
-    display.DrawRect(0, 50, 127, 53, true, false);
-    if(v.bar > 0)
-        display.DrawRect(1, 51, (uint_fast8_t)(1 + v.bar), 52, true, true);
-
-    char line[16];
-    sprintf(line, "FILTER  %s", filt_name(v.type));
-    display.SetCursor(0, 56);
-    display.WriteString(line, Font_6x8, true);
+    // Una sola vista por bloque, sin temporizadores ni pantallas intermedias: la
+    // envolvente para los cuatro mandos del ADSR, la respuesta del filtro para
+    // el corte, la resonancia y el selector.
+    if(focus <= POT_RELEASE)
+        draw_adsr();
+    else
+        draw_filter();
 
     display.Update();
 }
@@ -900,6 +1015,55 @@ static I2CHandle::Config oled_i2c_config()
     c.pin_config.scl = hw.GetPin(11);   // pin fisico 12 = PB8
     c.pin_config.sda = hw.GetPin(12);   // pin fisico 13 = PB9
     return c;
+}
+
+// Desbloqueo del bus antes de sondear. Si el instrumento se reinicio o perdio
+// tension a mitad de una transferencia, el SSD1306 se queda sujetando SDA a
+// nivel bajo esperando los pulsos de reloj que le faltan para terminar el byte,
+// y el bus queda muerto: el boton de reinicio no lo arregla, porque no le quita
+// la alimentacion al modulo. Era lo que obligaba a esperar a que se descargaran
+// los condensadores. La maniobra estandar es tomar las dos lineas como GPIO de
+// drenador abierto y sacar a mano nueve pulsos por SCL -- ocho por los bits del
+// byte y uno mas por el ciclo de reconocimiento -- y cerrar con una condicion de
+// parada. Despues, el Init() del I2C reconfigura los dos pines en su funcion
+// alternativa, asi que esto no deja nada tocado.
+static void oled_bus_recover()
+{
+    // hw.GetPin() devuelve el tipo antiguo dsy_gpio_pin y GPIO::Init() pide el
+    // nuevo Pin; la conversion solo existe en un sentido, asi que se reconstruye
+    // a mano. Se hace asi, y no escribiendo PB8/PB9 a pelo, para que los pines
+    // sigan saliendo de un unico sitio y no puedan divergir de oled_i2c_config().
+    const dsy_gpio_pin p_scl = hw.GetPin(11);   // pin fisico 12 = PB8
+    const dsy_gpio_pin p_sda = hw.GetPin(12);   // pin fisico 13 = PB9
+
+    GPIO scl, sda;
+    scl.Init(Pin(static_cast<GPIOPort>(p_scl.port), p_scl.pin),
+             GPIO::Mode::OUTPUT_OD,
+             GPIO::Pull::PULLUP);
+    sda.Init(Pin(static_cast<GPIOPort>(p_sda.port), p_sda.pin),
+             GPIO::Mode::OUTPUT_OD,
+             GPIO::Pull::PULLUP);
+
+    // En drenador abierto, escribir true suelta la linea y la sube el pull-up.
+    scl.Write(true);
+    sda.Write(true);
+    System::Delay(1);
+
+    for(int i = 0; i < 9; ++i)
+    {
+        scl.Write(false);
+        System::DelayUs(5);
+        scl.Write(true);
+        System::DelayUs(5);
+    }
+
+    // Condicion de parada: SDA sube estando SCL ya alto.
+    sda.Write(false);
+    System::DelayUs(5);
+    scl.Write(true);
+    System::DelayUs(5);
+    sda.Write(true);
+    System::Delay(1);
 }
 
 // Sondeo de presencia: se manda un comando inocuo y se mira si hay ACK. Timeout
@@ -1054,6 +1218,7 @@ int main(void)
     // Antes de StartAudio: el driver de I2C bloquea, y es preferible que un
     // display mal cableado se note en el arranque y no como cortes en un audio
     // que ya esta sonando. Si no contesta, el instrumento sigue funcionando.
+    oled_bus_recover();
     oled_present = oled_probe();
     if(oled_present)
     {
@@ -1116,7 +1281,15 @@ int main(void)
         focus_update();
         if(oled_present && System::GetNow() - last_oled >= OLED_PERIOD_MS)
         {
+            const uint32_t t0 = System::GetNow();
             oled_draw();
+
+            // Si el refresco se ha eternizado es que el bus esta colgado. A la
+            // tercera, el display se desconecta y el instrumento sigue.
+            if(System::GetNow() - t0 > OLED_STALL_MS
+               && ++oled_stalls >= OLED_STALL_MAX)
+                oled_present = false;
+
             last_oled = System::GetNow();
         }
 
