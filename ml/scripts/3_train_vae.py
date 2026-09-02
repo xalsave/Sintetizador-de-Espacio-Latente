@@ -1,35 +1,9 @@
 """
 3_train_vae.py
-Entrena el Variational Autoencoder (VAE) que aprende un espacio latente 2D de
-wavetables a partir del dataset AKWF procesado en la sesion 1.
-
-Idea
-----
-El encoder comprime cada onda de 1024 muestras a una coordenada (x, y) en un
-espacio latente 2D. El decoder reconstruye la onda desde esa coordenada. Como es
-un VAE, el latente queda regularizado (continuo y suave): puntos cercanos en
-(x, y) producen ondas parecidas, que es justo lo que necesita el control tactil.
-
-Arquitectura (segun el plan, parametros irrevocables del DISENO.md)
--------------------------------------------------------------------
-  encoder:  1024 -> 512 -> 128 -> (mu_2d, logvar_2d)
-  decoder:  2 -> 128 -> 512 -> 1024
-  latente:  2D
-  loss:     MSE(reconstruccion) + beta * KL,  beta-VAE con beta ~ 0.001
-
-Salidas (en OUTPUT_DIR = ml/exports)
-------------------------------------
-  vae.pt                -> pesos del modelo entrenado (state_dict + meta)
-  latent_scatter.png    -> scatter del latente coloreado por familia AKWF
-  reconstructions.png   -> original vs reconstruida (varias ondas)
-  loss_curve.png        -> curvas de perdida (total, recon, KL) por epoca
-
-Uso
----
-  python 3_train_vae.py
-Ajusta los hiperparametros en la seccion "Configuracion". Si hay GPU disponible
-(CUDA), se usa automaticamente; si no, corre en CPU (mas lento pero funciona).
-Para Colab: sube akwf_processed.npy y akwf_families.npy y ajusta DATASET_DIR.
+Entrena el VAE totalmente conectado que aprende el espacio latente 2D de las
+wavetables AKWF: encoder 1024 -> 512 -> 128 -> (mu, logvar) 2D, decoder espejo,
+perdida MSE + beta * KL (beta ~ 0.001 con rampa). Guarda vae.pt y las figuras
+latent_scatter.png, reconstructions.png y loss_curve.png en ml/exports.
 """
 
 import os
@@ -45,7 +19,7 @@ from torch.utils.data import DataLoader, TensorDataset, random_split
 # --------------------------------------------------------------------------- #
 # Configuracion
 # --------------------------------------------------------------------------- #
-# Rutas derivadas de la ubicacion del script (igual que en la sesion 1):
+# Rutas derivadas de la ubicacion del script:
 #   entrada: ml/dataset/akwf_processed.npy, akwf_families.npy
 #   salida:  ml/exports/
 SCRIPT_DIR  = os.path.dirname(os.path.abspath(__file__))
@@ -321,7 +295,7 @@ def main():
 
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-    # Guardar pesos + metadatos (utiles para la sesion 3, bake del grid).
+    # Guardar pesos + metadatos (los lee 4_bake_grid.py).
     ckpt_path = os.path.join(OUTPUT_DIR, "vae.pt")
     torch.save({
         "state_dict": model.state_dict(),
@@ -333,7 +307,7 @@ def main():
     }, ckpt_path)
     print(f"Guardado: {ckpt_path}")
 
-    # Visualizaciones de la sesion 2.
+    # Visualizaciones.
     plot_loss(hist, os.path.join(OUTPUT_DIR, "loss_curve.png"))
     plot_latent_scatter(model, x, families, device,
                         os.path.join(OUTPUT_DIR, "latent_scatter.png"))

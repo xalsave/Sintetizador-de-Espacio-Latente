@@ -1,40 +1,10 @@
 """
 4_bake_grid.py
-Hornea ("bake") el grid de wavetables a partir del VAE entrenado en la sesion 2.
-
-Idea
-----
-La red NO se ejecuta en vivo en el instrumento (decision 4 del DISENO.md: grid
-precalculado 16x16 -> cero inferencia en vivo -> latencia minima). Este script
-hace ese precalculo una sola vez en el PC:
-
-  1. Carga el VAE entrenado (ml/exports/vae.pt).
-  2. Encodea TODO el dataset para conocer la zona poblada del latente y fija los
-     limites del grid en los percentiles 2-98 de cada eje (decision de la S3:
-     mas musical, evita esquinas extrapoladas de zonas vacias).
-  3. Muestrea una rejilla regular GRID x GRID dentro de esos limites.
-  4. Decodifica una wavetable de 1024 muestras en cada nodo.
-  5. Exporta el banco a .npy (para la demo de PC) y a header C (para el S3).
-
-Salidas (en OUTPUT_DIR = ml/exports)
-------------------------------------
-  grid.npy          -> (GRID, GRID, 1024) float32, las wavetables decodificadas
-  grid_meta.npz     -> limites del latente (x_min, x_max, y_min, y_max) + GRID
-  grid.h            -> header C con el banco en Q15 (int16) + limites, para el S3
-  grid_preview.png  -> mosaico visual de las 256 ondas (control de calidad)
-
-Por que Q15 en el header
-------------------------
-El decoder ya acota la salida en [-1, 1] (tanh). El motor wavetable del Daisy
-trabaja comodo con int16 con signo (Q15: 1.0 -> 32767). Asi el grid ocupa
-256 * 1024 * 2 = 512 KB en flash del S3 en vez de 1 MB en float, y el S3 puede
-interpolar en enteros o convertir a float al vuelo. Los limites del latente van
-como float en el header para que el S3 mapee el (x,y) tactil al plano.
-
-Uso
----
-  python 4_bake_grid.py
-Requiere haber corrido antes 2_build_dataset.py y 3_train_vae.py.
+Hornea el grid 16x16 de wavetables con el VAE entrenado (ml/exports/vae.pt):
+encodea el dataset, fija los limites del latente en los percentiles 2-98 de
+cada eje (evita esquinas extrapoladas de zonas vacias), decodifica una tabla
+por nodo y exporta grid.npy, grid_meta.npz, grid.h (Q15 int16: 512 KB en la
+flash del S3 en vez de 1 MB en float) y grid_preview.png.
 """
 
 import os
@@ -56,7 +26,7 @@ OUTPUT_DIR  = os.path.normpath(os.path.join(SCRIPT_DIR, "..", "exports"))
 PROCESSED_PATH = os.path.join(DATASET_DIR, "akwf_processed.npy")
 CKPT_PATH      = os.path.join(OUTPUT_DIR, "vae.pt")
 
-GRID        = 16            # rejilla 16x16 = 256 wavetables (decision 4)
+GRID        = 16            # rejilla 16x16 = 256 wavetables
 PCTL_LOW    = 2.0           # percentil inferior para los limites del latente
 PCTL_HIGH   = 98.0          # percentil superior
 SEED        = 42
@@ -69,7 +39,7 @@ np.random.seed(SEED)
 # Modelo (identico al de 3_train_vae.py; solo necesitamos el decoder en eval)
 # --------------------------------------------------------------------------- #
 class VAE(nn.Module):
-    """Misma arquitectura FC que en la sesion 2. Replicada aqui para poder
+    """Misma arquitectura FC que en 3_train_vae.py. Replicada aqui para poder
     cargar el state_dict sin importar el script de entrenamiento."""
 
     def __init__(self, input_dim, latent_dim, hidden):

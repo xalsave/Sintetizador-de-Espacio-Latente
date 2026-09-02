@@ -1,49 +1,11 @@
 """
 5_demo_morph.py
-Demo en PC del morphing latente, ANTES de tocar hardware. Mueve el raton sobre
-una ventana 2D (el plano latente); el programa interpola bilinealmente entre las
-wavetables vecinas del grid y reproduce el resultado en vivo con sounddevice.
-
-Es la VALIDACION CLAVE de la sesion 3 (DISENO.md / PROJECT.md): comprobar por el
-oido que la transicion entre celdas es suave, SIN CLICKS, replicando lo que el
-S3 hara en vivo (interp bilineal sobre grid, decision 4) y el crossfade que el
-Daisy aplicara al cambiar de tabla (decision 6).
-
-Vista
------
-  - Panel izquierdo: el plano latente. El raton lo navega.
-  - Panel derecho: OSCILOSCOPIO de la onda interpolada actual. Su titulo muestra
-    la "diversidad" = distancia RMS respecto a la onda del centro del grid; sirve
-    para ver de un vistazo si el grid esta vivo o colapsado.
-
-Teclas
-------
-  a   -> activa/desactiva el ARPEGIADOR (recorre una secuencia musical en vez de
-         tono fijo; usa una octava mas alta para destapar diferencias timbricas
-         que a tono grave se enmascaran).
-  +/- -> sube/baja la octava base.
-
-Como mapea esto al instrumento real
-------------------------------------
-  raton (x,y) en ventana   <->  punto (x,y) tactil de la CYD
-  interp bilineal aqui      <->  interp bilineal en el ESP32-S3
-  crossfade de fase aqui    <->  crossfade del Daisy al recibir tabla nueva
-  arpegiador aqui           <->  notas MIDI del Keystep (solo para la demo)
-
-Uso
----
-  pip install numpy sounddevice matplotlib
-  python 5_demo_morph.py
-Requiere ml/exports/grid.npy y grid_meta.npz (genera antes 4_bake_grid.py).
-
-Por que "todo suena igual"
---------------------------
-Dos causas posibles, y esta demo las distingue:
-  1) Percepcion: a 110 Hz con armonicos suaves, timbres distintos suenan
-     parecidos. -> El arpegiador agudo y el osciloscopio lo destapan.
-  2) Modelo: el grid esta colapsado (el VAE decodifica casi lo mismo en todo
-     el latente). -> La sonda de esquinas al arrancar y el medidor de
-     diversidad RMS lo delatan (valores ~0 = colapso real, hay que iterar VAE).
+Demo en PC del morphing latente: el raton navega el plano latente, se interpola
+bilinealmente entre las wavetables vecinas del grid (como hara el S3) y se
+reproduce en vivo con crossfade entre tablas (como hara el Daisy). El panel
+derecho es un osciloscopio con la "diversidad" (RMS respecto a la onda media)
+para distinguir un grid vivo de uno colapsado.
+Teclas: 'a' arpegiador on/off, +/- octava. Requiere grid.npy y grid_meta.npz.
 """
 
 import os
@@ -68,8 +30,8 @@ GRID_PATH   = os.path.join(OUTPUT_DIR, "grid.npy")
 META_PATH   = os.path.join(OUTPUT_DIR, "grid_meta.npz")
 
 SAMPLE_RATE = 48000        # Hz, igual que el codec del Daisy
-BASE_NOTE   = 220.0        # tono base de demo (La3). Mas agudo que antes (era 110)
-XFADE_MS    = 15.0         # crossfade entre tablas (probar 5/10/20, decision 6)
+BASE_NOTE   = 220.0        # tono base de demo (La3)
+XFADE_MS    = 15.0         # crossfade entre tablas, ms
 AMP         = 0.22         # volumen de salida [0..1], suave para los oidos
 BLOCK       = 256          # muestras por bloque de audio
 
