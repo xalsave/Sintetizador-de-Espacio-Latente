@@ -1,19 +1,18 @@
-// SintetizadorEspacioLatente.cpp
-// -----------------------------------------------------------------------------
-// BLOQUE B (20 ago 2026): panel de control analogico sobre lo ya validado.
+// SintetizadorEspacioLatente.cpp - Firmware del Daisy Seed: motor wavetable
+// con crossfade, receptor SPI de wavetables (esclavo, DMA), voz monofonica MIDI
+// con ADSR, filtro Svf gobernado por un panel de potenciometros y OLED por I2C.
 //
-//   - 6 potenciometros por ADC: A, D, S, R del envolvente (sustituyen a las
-//     constantes fijas de S8) + cutoff y resonancia de un filtro daisysp::Svf.
-//   - Selector ON-OFF-ON de tipo de filtro (LPF / BPF / HPF) leido por ADC.
-//   - OLED SSD1306 por I2C (pines fisicos 12 y 13) mostrando en grande el
-//     parametro que se esta tocando y, fijo abajo, el tipo de filtro.
+// Cadena de audio: osc -> Svf -> ADSR (VCO -> VCF -> VCA). Dos fuentes de
+// control independientes que conviven sin pisarse:
+//   - MIDI    -> osc.SetFreq()   (frecuencia de la voz monofonica y gate del ADSR)
+//   - CYD/SPI -> osc.LoadNext()  (contenido de la wavetable, con crossfade)
+// Voz monofonica con prioridad "ultima nota" y pila de notas pulsadas: al soltar
+// una tecla se vuelve a la anterior que siga pulsada.
 //
-// La cadena de audio pasa de  osc -> ADSR  a  osc -> Svf -> ADSR  (orden clasico
-// de sintesis sustractiva: VCO -> VCF -> VCA).
+// MIDI: Keystep -> DIN -> Shield 6N138 -> USART1 (D13 Tx / D14 Rx).
 //
-// Los pines NO se han elegido aqui: vienen fijados por docs/veroboard.md
-// seccion 2, que es la especificacion de la placa definitiva. Este firmware se
-// construye CONTRA ese pinout, no al reves.
+// Los pines vienen fijados por docs/veroboard.md seccion 2, que es la
+// especificacion de la placa definitiva.
 //
 // Correspondencia pin fisico del Daisy -> argumento de hw.GetPin() (numeracion
 // "D" de libDaisy). NO coinciden, y confundirlos es cablear otro pin:
@@ -24,39 +23,16 @@
 //   fisico 31 (PA1)  A9  = D24  Release      fisico 21        3V3A (alimenta potes)
 //   fisico 12 (PB8)  SCL = D11  OLED         fisico 13 (PB9)  SDA = D12  OLED
 //
-// REMAPEO DEL 27 AGO 2026: el trazado de la veroboard se calco en espejo y los
-// cortes ya taladrados impedian llevar cuatro cursores a sus pines originales,
-// asi que se adapto el firmware a la placa en vez de rehacerla. Cambian S, R,
-// cutoff y selector (24/25/26/28 -> 30/31/32/29); attack, decay y Q se quedan.
-// Q volvio a la tira 26 (pin 27, A5) porque los pines 33 y 34 son los UNICOS
-// del bloque 29-35 sin canal de ADC. Los pines 29 y 30 son ademas DAC OUT 2 y
-// DAC OUT 1, pero ConfigureDac() de libDaisy esta comentado entero, asi que
-// seed.Init() no los reclama y quedan libres para el ADC. Verificado tambien
-// que PA5/PA4/PA1/PA0 estan en adcpins[] de libDaisy/src/per/adc.cpp
-// (canales 19, 18, 17 y 16). Los pines 24, 25, 28, 29 y 30 son solo tolerantes
-// a 3,3 V: los potes cuelgan de 3V3A, asi que no hay conflicto.
-//
 // (En la columna derecha del conector, fisico = D + 7. Verificado contra la
 //  tabla seedgpio[] de libDaisy/src/daisy_seed.cpp.)
 //
-// NO se ha tocado: el receptor SPI (S7), el motor Wavetable con crossfade (S5),
-// la voz monofonica MIDI ni la pila de notas (S8).
-// -----------------------------------------------------------------------------
-// Sesion 8 (MIDI): el Keystep MK2 controla la NOTA (pitch/gate) del Daisy por
-// MIDI DIN -> Shield 6N138 -> USART1 (D13 Tx / D14 Rx). El TIMBRE lo sigue
-// controlando el toque en la CYD via SPI (MVP de S7, sin tocar).
-//
-// Dos fuentes de control independientes que conviven sin pisarse:
-//   - MIDI  -> osc.SetFreq()   (frecuencia de reproduccion, una voz monofonica)
-//   - CYD/SPI -> osc.LoadNext() (contenido de la wavetable, crossfade de S5)
-//
-// Voz monofonica con prioridad "ultima nota" y pila de notas pulsadas: al soltar
-// una tecla se vuelve a la anterior que siga pulsada. Envolvente ADSR completa
-// (daisysp::Adsr): Note On dispara el ataque, Note Off el release.
-//
-// NO se ha tocado nada del receptor SPI (S7, DMA + CRC, validado a 0 LSB) ni del
-// motor Wavetable con doble buffer + crossfade de 20 ms (S5). Solo se anade la
-// lectura MIDI en paralelo y la envolvente en el callback de audio.
+// Sobre ese reparto: los pines 33 y 34 son los UNICOS del bloque 29-35 sin canal
+// de ADC. Los pines 29 y 30 son ademas DAC OUT 2 y DAC OUT 1, pero
+// ConfigureDac() de libDaisy esta comentado entero, asi que seed.Init() no los
+// reclama y quedan libres para el ADC (PA5/PA4/PA1/PA0 estan en adcpins[] de
+// libDaisy/src/per/adc.cpp, canales 19, 18, 17 y 16). Los pines 24, 25, 28, 29
+// y 30 son solo tolerantes a 3,3 V: los potes cuelgan de 3V3A, asi que no hay
+// conflicto.
 //
 // Enlace SPI (docs/spi.md seccion 2): S3 maestro, Daisy esclavo SPI_1 con
 // DMA, 10 MHz, modo 0, MSB first. Trama de 2054 bytes:
@@ -64,7 +40,6 @@
 //   byte 2..3     : seq_id  uint16 little-endian
 //   byte 4..2051  : payload 1024 muestras int16 little-endian (Q15)
 //   byte 2052..53 : CRC16/CCITT-FALSE sobre el payload, little-endian
-// -----------------------------------------------------------------------------
 
 #include "daisy_seed.h"
 #include "daisysp.h"   // daisysp::Adsr, daisysp::Svf (DaisySP enlazada, -ldaisysp)
@@ -78,8 +53,8 @@ DaisySeed hw;
 
 // Poner a 1 para volcar por USB serie las 1024 muestras de cada tabla recibida
 // (WAVE_BEGIN..WAVE_END), para la validacion cruzada con 7_validate_spi.py.
-// En S8 se deja a 0: el uso normal es tocar MIDI mientras se mueve el timbre, y
-// el volcado de 1024 lineas por trama ahogaria los logs MIDI del serie.
+// Se deja a 0: el uso normal es tocar MIDI mientras se mueve el timbre, y el
+// volcado de 1024 lineas por trama ahogaria los logs MIDI del serie.
 #define SPI_DEBUG_DUMP 0
 
 // Volcado por serie de la tabla nota->Hz->phase_inc al arrancar (y cada 3 s),
@@ -106,16 +81,16 @@ DaisySeed hw;
 static const int   TABLE_LEN   = 1024;     // muestras por ciclo (igual que el grid)
 static const float SAMPLE_RATE = 48000.f;  // Hz, codec del Daisy (nominal)
 static const float NOTE_HZ     = 220.f;    // tono por defecto antes del primer MIDI
-static const float XFADE_MS    = 20.f;     // duracion del crossfade (S5)
-// Ganancia de salida global. 0.8 (antes 0.4) para no tener que compensar con el
-// previo de la interfaz: subir la ganancia aguas abajo amplifica senal Y ruido por
-// igual, subirla aqui solo amplifica la senal. Sin riesgo de recorte: el crossfade
-// es una media ponderada y no anade ganancia, asi que el pico maximo es 0.8.
+static const float XFADE_MS    = 20.f;     // duracion del crossfade
+// Ganancia de salida global. 0.8 para no tener que compensar con el previo de la
+// interfaz: subir la ganancia aguas abajo amplifica senal Y ruido por igual,
+// subirla aqui solo amplifica la senal. Sin riesgo de recorte: el crossfade es
+// una media ponderada y no anade ganancia, asi que el pico maximo es 0.8.
 static const float OUT_GAIN    = 0.8f;
 
-// Envolvente ADSR (segundos / nivel 0..1). Desde el bloque B son solo los valores
-// de ARRANQUE: el ADSR queda gobernado por los cuatro potes en cuanto llega la
-// primera lectura del ADC, unos milisegundos despues.
+// Envolvente ADSR (segundos / nivel 0..1). Son solo los valores de ARRANQUE: el
+// ADSR queda gobernado por los cuatro potes en cuanto llega la primera lectura
+// del ADC, unos milisegundos despues.
 static const float ADSR_ATTACK  = 0.005f;  // 5 ms
 static const float ADSR_DECAY   = 0.10f;   // 100 ms
 static const float ADSR_SUSTAIN = 0.70f;   // 70 %
@@ -134,8 +109,8 @@ static const float VEL_SMOOTH = 0.004f;
 // --------------------------------------------------------------------------- //
 // Motor wavetable: doble buffer + acumulador de fase + crossfade
 // --------------------------------------------------------------------------- //
-// (IDENTICO a la sesion 5/7: cerrado y validado. No se toca. En S8 sigue igual:
-//  MIDI solo llama a SetFreq(); LoadNext() lo sigue llamando el SPI.)
+// MIDI solo llama a SetFreq(); LoadNext() lo llama el receptor SPI desde el bucle
+// principal, y NextSample() corre en el callback de audio.
 class Wavetable
 {
   public:
@@ -162,7 +137,10 @@ class Wavetable
     void LoadNext(const int16_t* src)
     {
         std::memcpy(table_next_, src, sizeof(table_next_));
-        xfade_pos_ = 0.f;  // dispara el crossfade (poner esto el ULTIMO)
+        // Dispara el crossfade. Va el ULTIMO a proposito: el callback de audio
+        // lee xfade_pos_ sin ningun bloqueo, y si se pusiera a 0 antes del
+        // memcpy empezaria a mezclar una table_next_ a medio copiar.
+        xfade_pos_ = 0.f;
     }
 
     float NextSample()
@@ -216,8 +194,7 @@ Wavetable osc;
 // el Daisy es MUDO hasta que llega la primera trama SPI valida del S3, aunque el
 // MIDI funcione: un falso negativo caro de diagnosticar. Con ella, el Daisy es un
 // instrumento autonomo (nota por MIDI, timbre senoidal) y el SPI solo *sustituye*
-// el timbre. Permite validar MIDI+audio aislado del SPI, y no toca ni el receptor
-// SPI (S7) ni el crossfade (S5): solo carga el buffer activo antes de StartAudio.
+// el timbre. Solo carga el buffer activo antes de StartAudio.
 static int16_t boot_wave[TABLE_LEN];
 
 static void make_boot_wave()
@@ -231,7 +208,7 @@ static void make_boot_wave()
 
 
 // --------------------------------------------------------------------------- //
-// MIDI (S8): USART1 -> voz monofonica last-note + ADSR
+// MIDI: USART1 -> voz monofonica last-note + ADSR
 // --------------------------------------------------------------------------- //
 MidiUartHandler midi;
 daisysp::Adsr   env;
@@ -418,7 +395,7 @@ static void dump_note_table(float sr)
 
 
 // --------------------------------------------------------------------------- //
-// Recepcion SPI (S7): esclavo SPI_1 + DMA  --  NO SE TOCA en S8
+// Recepcion SPI: esclavo SPI_1 + DMA
 // --------------------------------------------------------------------------- //
 static const int SPI_SAMPLES   = 1024;
 static const int SPI_PAYLOAD   = SPI_SAMPLES * 2;   // 2048 bytes
@@ -498,7 +475,7 @@ static void spi_process_frame()
         if(ok)
         {
             std::memcpy(spi_wave, spi_rx_buffer + 4, SPI_PAYLOAD);
-            osc.LoadNext(spi_wave);   // mismo crossfade de S5
+            osc.LoadNext(spi_wave);   // crossfade hacia la tabla nueva
             spi_frames++;
         }
     }
@@ -529,7 +506,7 @@ static void spi_process_frame()
 
 
 // --------------------------------------------------------------------------- //
-// Bloque B: panel analogico (6 potes + selector) y filtro Svf
+// Panel analogico (6 potes + selector) y filtro Svf
 // --------------------------------------------------------------------------- //
 // Los siete canales van al ADC1 del STM32H750, con los potes alimentados desde
 // 3V3A (pin fisico 21) y NUNCA desde el rail de 5 V: el ADC referencia su fondo
@@ -554,11 +531,10 @@ enum PotIdx
 static const uint8_t POT_PIN_D[POT_COUNT] = {15, 16, 23, 24, 25, 20, 22};
 
 // Rangos de mapeo. La frecuencia de corte va en escala EXPONENCIAL porque el
-// oido percibe la altura logaritmicamente. Los tres tiempos del ADSR pasaron a
-// escala LINEAL el 1 sep 2026 por decision del autor. Queda anotada la
-// contrapartida: con recorrido lineal sobre 1 ms - 2 s, el tramo de 1 a 100 ms
-// -- el que decide el caracter de un ataque percusivo -- cae dentro del primer
-// 5 % del giro del mando.
+// oido percibe la altura logaritmicamente. Los tres tiempos del ADSR van en
+// escala LINEAL; la contrapartida es que, con recorrido lineal sobre 1 ms - 2 s,
+// el tramo de 1 a 100 ms (el que decide el caracter de un ataque percusivo) cae
+// dentro del primer 5 % del giro del mando.
 static const float ATTACK_MIN  = 0.001f;   // 1 ms
 static const float ATTACK_MAX  = 2.0f;     // 2 s
 static const float DECAY_MIN   = 0.005f;   // 5 ms
@@ -615,8 +591,7 @@ static inline float map_lin(float x, float lo, float hi)
 // las fija el divisor de dos resistencias de 10k descrito en veroboard.md:
 //   arriba (a 3V3A) = 3,3 V -> HPF   centro (abierto) = 1,65 V -> BPF
 //   abajo  (a AGND) = 0 V   -> LPF
-// El sentido se corrigio el 27 ago 2026: el panel ya esta impreso y serigrafiado
-// con HPF arriba, BPF en medio y LPF abajo, y el codigo lo tenia al reves.
+// (Mismo orden que la serigrafia del panel: HPF arriba, LPF abajo.)
 // El centro NO es un pin al aire: si lo fuera, flotaria y leeria basura. Son esas
 // dos resistencias las que lo mantienen clavado a media escala.
 // No hace falta antirrebote aparte: se decide sobre el valor ya suavizado, y los
@@ -695,25 +670,23 @@ static void controls_init()
 // --------------------------------------------------------------------------- //
 // OLED SSD1306 por I2C (pines fisicos 12 = SCL y 13 = SDA)
 // --------------------------------------------------------------------------- //
-// Va colgado del Daisy, no de la CYD, porque la cadena de datos es unidireccional
-// (CYD -> S3 -> Daisy) y los potes estan en el extremo final: pintarlos en la CYD
-// exigiria remontar los dos enlaces al reves, incluido el SPI de S7, que esta
-// congelado. Aqui es cero protocolo nuevo. (PROJECT.md seccion 9, bloque B.)
+// Va colgado del Daisy, no de la CYD: la cadena de datos es unidireccional
+// (CYD -> S3 -> Daisy) y los potes estan en el extremo final; pintarlos en la
+// CYD exigiria remontar los dos enlaces al reves.
 //
 // TRAMPA EVITADA: I2C1 sale tanto por PB8/PB9 (pines 12-13) como por PB6/PB7
 // (pines 14-15), y PB6/PB7 son el USART1 del MIDI. Coger el mapeo "por defecto"
 // habria cableado el OLED encima del MIDI. Van obligatoriamente en 12 y 13.
 //
-// QUE MUESTRA: el parametro que se esta tocando en ese momento, en grande, con
-// su valor en unidades reales y una barra con la posicion del mando; y el tipo
-// de filtro, permanente, en la ultima linea. Con seis mandos y una pantalla de
-// 128x64, repartirla en seis casillas diminutas seria ilegible justo cuando hace
-// falta: mientras se gira un mando. El foco sigue al ultimo control movido y se
-// queda ahi, sin temporizadores ni vuelta automatica a ninguna pantalla base.
+// QUE MUESTRA: el ultimo mando movido (nombre y valor en unidades reales) y la
+// grafica del ADSR o de la respuesta del filtro. Con seis mandos y 128x64 px,
+// repartir la pantalla en seis casillas seria ilegible justo cuando hace falta:
+// mientras se gira un mando. El foco se queda en el ultimo control movido, sin
+// temporizadores ni vuelta automatica a ninguna pantalla base.
 //
-// Efecto util durante el montaje: el propio display es la comprobacion de
-// cableado. Se gira un mando y tiene que aparecer SU nombre. Si aparece otro, el
-// cursor esta en el pin equivocado.
+// Durante el montaje, el propio display es la comprobacion de cableado: se gira
+// un mando y tiene que aparecer SU nombre; si aparece otro, el cursor esta en el
+// pin equivocado.
 
 #include "dev/oled_ssd130x.h"
 
@@ -733,21 +706,19 @@ static bool oled_present = false;
 // entero (1 kB) y bloquea ~10 ms a 1 MHz.
 static const uint32_t OLED_PERIOD_MS = 80;
 
-// Cuanto tiene que moverse un mando para robar el foco. Era el 1 %, y se subio
-// al 3 % el 1 sep 2026: medido sobre el montaje final, el cursor de sustain
-// tiembla ~2 % del recorrido, cruzaba el umbral continuamente y se quedaba con
-// el foco de forma permanente, de modo que ningun otro mando llegaba a
-// mostrarse. Subir el umbral NO pierde resolucion de ajuste: MOVE_EPS solo
-// decide a que canal MIRA el display, y ctrl[] se aplica siempre entero.
+// Cuanto tiene que moverse un mando para robar el foco. 3 % porque, medido
+// sobre el montaje final, el cursor de sustain tiembla ~2 % del recorrido: con
+// un umbral menor se quedaba con el foco de forma permanente. Un umbral alto NO
+// pierde resolucion de ajuste: MOVE_EPS solo decide a que canal MIRA el
+// display, y ctrl[] se aplica siempre entero.
 static const float MOVE_EPS = 0.03f;
 
 // Vigilancia del refresco. Un Update() sano cuesta ~10 ms, pero el transporte
 // I2C de libDaisy espera hasta 1 s por cada pagina del framebuffer, asi que con
 // el bus colgado un solo refresco congela el bucle principal segundos enteros y
-// con el se paran el MIDI y el SPI: eso es lo que hacia que un display averiado
-// se llevara por delante el instrumento entero. Al tercer refresco que pase de
-// 100 ms el display se apaga solo y no se vuelve a tocar el bus en toda la
-// sesion. Se prefiere perder la pantalla a perder el instrumento.
+// con el se paran el MIDI y el SPI. Al tercer refresco que pase de 100 ms el
+// display se apaga solo y no se vuelve a tocar el bus en toda la sesion. Se
+// prefiere perder la pantalla a perder el instrumento.
 static const uint32_t OLED_STALL_MS  = 100;
 static const int      OLED_STALL_MAX = 3;
 static int            oled_stalls    = 0;
@@ -981,10 +952,7 @@ static void oled_draw()
 
     display.Fill(false);
 
-    // Cabecera de una linea con el nombre y el valor del ultimo mando movido. El
-    // numero en fuente grande y la barra de posicion se han retirado: con la
-    // grafica debajo, lo que decian ya esta en la figura, y cada pantalla
-    // distinta era una transferencia mas por un bus que va justo.
+    // Cabecera de una linea con el nombre y el valor del ultimo mando movido.
     char head[24];
     snprintf(head, sizeof(head), "%s %s%s", v.name, v.value, v.unit);
     display.SetCursor(0, 0);
@@ -1021,8 +989,7 @@ static I2CHandle::Config oled_i2c_config()
 // tension a mitad de una transferencia, el SSD1306 se queda sujetando SDA a
 // nivel bajo esperando los pulsos de reloj que le faltan para terminar el byte,
 // y el bus queda muerto: el boton de reinicio no lo arregla, porque no le quita
-// la alimentacion al modulo. Era lo que obligaba a esperar a que se descargaran
-// los condensadores. La maniobra estandar es tomar las dos lineas como GPIO de
+// la alimentacion al modulo. La maniobra estandar es tomar las dos lineas como GPIO de
 // drenador abierto y sacar a mano nueve pulsos por SCL -- ocho por los bits del
 // byte y uno mas por el ciclo de reconocimiento -- y cerrar con una condicion de
 // parada. Despues, el Init() del I2C reconfigura los dos pines en su funcion
@@ -1129,8 +1096,8 @@ void AudioCallback(AudioHandle::InterleavingInputBuffer  in,
     // de corte vale ~1/damp, con damp = 2*(1-Q^0.25): a Q alto son mas de 20 dB,
     // suficientes para saturar la salida en cuanto un armonico de la wavetable cae
     // cerca del corte. La correccion es cuadratica en Q y NEUTRA en Q=0, asi que
-    // con la resonancia al minimo el nivel es exactamente el calibrado en S8 y las
-    // medidas de THD no la ven.
+    // con la resonancia al minimo el nivel no cambia y las medidas de THD no la
+    // ven.
     const float res    = ctrl[POT_RES] * RES_MAX;
     const float makeup = 1.f / (1.f + 2.f * res * res);
 
@@ -1138,7 +1105,7 @@ void AudioCallback(AudioHandle::InterleavingInputBuffer  in,
     {
         vel_gain_smooth += (midi_vel_gain - vel_gain_smooth) * VEL_SMOOTH;
 
-        float s = osc.NextSample();                // VCO: wavetable + crossfade (S5)
+        float s = osc.NextSample();                // VCO: wavetable + crossfade
 
         // VCF: el Svf calcula las cuatro salidas a la vez, asi que elegir el tipo
         // de filtro cuesta cero CPU. Es la ventaja concreta que decidio usarlo en
@@ -1193,8 +1160,8 @@ int main(void)
     env.SetReleaseTime(ADSR_RELEASE);
     TRACE("env ok");
 
-    // Filtro del bloque B. Arranca abierto y sin resonancia; el primer bloque de
-    // audio ya lo pone donde digan los mandos.
+    // Filtro. Arranca abierto y sin resonancia; el primer bloque de audio ya lo
+    // pone donde digan los mandos.
     filt.Init(hw.AudioSampleRate());
     filt.SetFreq(CUTOFF_MAX);
     filt.SetRes(0.f);
