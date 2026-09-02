@@ -1,11 +1,8 @@
 // wave_sender.h - Canal de vuelta S3 -> CYD: envia la onda para PINTARLA.
 //
-// Bloque A (20 ago). El UART hacia la CYD es full-duplex y ya estaba abierto en
-// los dos sentidos por uart_rx_begin(rx_pin, tx_pin, baud); aqui solo se anade
-// el emisor. Lo que viaja NO son datos de sintesis: es una version diezmada y
-// reducida a 8 bits, solo para dibujar. El grid y la bilineal siguen viviendo
-// exclusivamente en el S3, y la wavetable real de 1024 muestras Q15 solo sale
-// por el SPI hacia el Daisy (S7, congelado).
+// Lo que viaja NO son datos de sintesis: es una version diezmada y reducida a
+// 8 bits, solo para dibujar. La wavetable real de 1024 muestras Q15 solo sale
+// por el SPI hacia el Daisy.
 //
 // Por que diezmar: 1024 muestras int16 son 2048 bytes = 178 ms a 115200 baud,
 // imposible de seguir con el dedo. 256 puntos int8 son 256 bytes y sobran para

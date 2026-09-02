@@ -1,9 +1,5 @@
 // spi_sender.h - Envio de la wavetable interpolada al Daisy por SPI (maestro).
 //
-// Sesion 7. El S3 ya calcula la wavetable por interpolacion bilineal (S6); aqui
-// solo se anade el transporte: empaquetar esas 1024 muestras Q15 y mandarlas al
-// Daisy, que es el esclavo SPI y las reproduce con su motor de crossfade (S5).
-//
 // Trama (2054 bytes, ver docs/spi.md seccion 2):
 //   byte 0..1     : header 0xDE 0xAD
 //   byte 2..3     : seq_id  uint16 little-endian (incrementa por wavetable)
@@ -14,7 +10,7 @@
 #pragma once
 #include <stdint.h>
 
-// Inicializa el bus SPI maestro con los pines GPIO del S3 (confirmados en S7):
+// Inicializa el bus SPI maestro con los pines GPIO del S3:
 //   sck=12, mosi=11, miso=13, cs=10.
 // miso no se usa (el Daisy recibe en RX_ONLY), pero se cablea por coherencia.
 void spi_tx_begin(int sck, int miso, int mosi, int cs);
