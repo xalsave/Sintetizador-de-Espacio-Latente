@@ -1,24 +1,9 @@
 """
 6_validate_s3.py
-Valida la interpolacion bilineal del ESP32-S3 contra la referencia en PC.
-
-Idea
-----
-El S3 imprime por serie la wavetable interpolada para una coordenada (x,y) en
-0..65535 (bloque WAVE_BEGIN ... WAVE_END del main.cpp de la sesion 6). Este
-script recalcula esa MISMA wavetable en numpy desde grid.npy con el mismo mapeo
-(decision de S3: bilineal sobre grid 16x16), y compara muestra a muestra. Si el
-error maximo es ~1 LSB de Q15, el firmware del S3 esta validado de forma
-objetiva (no solo "se imprime algo").
-
-Uso
----
-  1) En el monitor serie del S3, manda una coordenada, p.ej.  "40000 12000"
-  2) Copia TODO el bloque (incluidos WAVE_BEGIN y WAVE_END) a un .txt, o
-     captura el serie a fichero. Ejemplo de captura con pyserial mas abajo.
-  3) python 6_validate_s3.py --dump captura.txt --x 40000 --y 12000
-
-Requiere ml/exports/grid.npy (lo genera 4_bake_grid.py).
+Valida la interpolacion bilineal del ESP32-S3: recalcula en numpy, desde
+grid.npy, la wavetable que el S3 volco por serie (bloque WAVE_BEGIN..WAVE_END)
+para una coordenada (x,y) y compara muestra a muestra (criterio: <= 1 LSB Q15).
+  python 6_validate_s3.py --dump captura.txt --x 40000 --y 12000
 """
 
 import os

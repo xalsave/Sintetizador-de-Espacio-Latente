@@ -1,14 +1,8 @@
 """
-2.1_validate_alignment.py
 Demuestra que la alineacion de fase es invariante al desplazamiento circular:
-una misma onda, arrancada en puntos distintos del ciclo, vuelve EXACTAMENTE a la
-misma forma tras alinear el fundamental a fase 0. Esa es la propiedad que le
-quita al VAE el trabajo de modelar "en que punto empieza la onda".
-
-Carga una onda real de AKWF (la primera que encuentra). Si no encuentra el
-dataset, usa una onda sintetica rica en armonicos como demostracion.
-
-Reutiliza las funciones de 2_build_dataset.py (no duplica logica).
+una misma onda, arrancada en puntos distintos del ciclo, vuelve a la misma forma
+tras alinear el fundamental a fase 0. Usa la primera onda de AKWF (o una
+sintetica si no hay dataset) y las funciones de 2_build_dataset.py.
 """
 
 import os

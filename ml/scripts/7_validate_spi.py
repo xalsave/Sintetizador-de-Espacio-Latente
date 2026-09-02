@@ -1,42 +1,9 @@
 """
 7_validate_spi.py
-Valida el enlace SPI S3 -> Daisy de forma objetiva (sesion 7), no solo de oido.
-
-Idea
-----
-En S6 ya se valido que el S3 interpola bien (6_validate_s3.py: S3 vs numpy, error
-<= 1 LSB Q15). En S7 lo que hay que probar es el TRANSPORTE: que la wavetable que
-el Daisy REPRODUCE es exactamente la que el S3 calculo y envio por SPI.
-
-Para una coordenada (x,y) fija se cruzan hasta tres cosas:
-  1. ref  : la wavetable que numpy calcula desde grid.npy (verdad de referencia,
-            misma bilineal que el firmware). Reutiliza reference_wave() de
-            6_validate_s3.py -> una sola fuente de verdad para el mapeo.
-  2. daisy : las 1024 muestras que el Daisy imprime por USB al recibir la trama
-            (bloque WAVE_BEGIN..WAVE_END, SPI_DEBUG_DUMP=1 en su .cpp).
-  3. s3    : (opcional) el volcado WAVE_* del propio S3 para esa coord.
-
-Criterios:
-  - daisy == s3    -> exactamente igual (0 errores): el SPI no corrompe nada.
-  - daisy vs ref   -> <= 1 LSB Q15: la cadena entera es correcta (mismo margen de
-                     redondeo Q15 ya caracterizado en S6).
-
-Uso
----
-  1) Flashea el Daisy con SPI_DEBUG_DUMP 1.
-  2) Manda UNA coordenada fija al S3 (texto "x y" por su USB, o un toque en la
-     CYD). El S3 interpola y la envia por SPI; el Daisy vuelca el bloque WAVE_*.
-  3) Captura el serie del DAISY a un fichero (ver captura con pyserial abajo) y:
-       python 7_validate_spi.py --daisy daisy_dump.txt --x 40000 --y 12000
-     Opcional, cruzar tambien contra el volcado del S3:
-       python 7_validate_spi.py --daisy daisy_dump.txt --s3 s3_dump.txt \
-                                --x 40000 --y 12000
-
-Captura del serie del Daisy (ejemplo, ajustar COM):
-  python -c "import serial;p=serial.Serial('COM7',115200,timeout=2);\
-open('daisy_dump.txt','wb').write(p.read(200000))"
-
-Requiere ml/exports/grid.npy (lo genera 4_bake_grid.py).
+Valida el transporte SPI S3 -> Daisy: compara las 1024 muestras que el Daisy
+vuelca por USB (SPI_DEBUG_DUMP=1) con la referencia numpy de grid.npy (<= 1 LSB
+Q15) y, opcionalmente, con el volcado del propio S3 (deben ser identicas).
+  python 7_validate_spi.py --daisy daisy_dump.txt [--s3 s3_dump.txt] --x 40000 --y 12000
 """
 
 import os

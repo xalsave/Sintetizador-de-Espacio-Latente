@@ -1,26 +1,8 @@
 """
 8b_monitor_midi.py
-Monitor de serie del Daisy para ver EN VIVO los eventos MIDI (y SPI) que procesa,
-sin el ruido del volcado de la tabla de auto-test (MIDI_SELFTEST).
-
-Complementa a 8_validate_midi.py: aquel valida la tabla de conversion nota->Hz
-(matematica interna, independiente de las teclas); este muestra lo que el Daisy
-recibe de verdad al tocar el Keystep y al tocar la CYD.
-
-Por defecto imprime solo las lineas de estado del firmware:
-  # NOTE_ON  note=.. vel=.. hz_milli=.. pinc_micro=.. held=..
-  # NOTE_OFF note=.. held=.. gate=..
-  # SPI ok seq=.. ...            (cada toque en la CYD)
-  # SPI DESCARTADA seq=..
-
-y oculta el bloque NOTE_TABLE_* (las 130 lineas del auto-test cada 3 s).
-
-Uso
----
-  python 8b_monitor_midi.py --port COM7
-  python 8b_monitor_midi.py --port COM7 --raw     (muestra TODO, sin filtrar)
-
-Corta con Ctrl+C. Requiere pyserial (pip install pyserial).
+Monitor de serie del Daisy: muestra en vivo las lineas de estado ("# NOTE_ON",
+"# NOTE_OFF", "# SPI ok"...) y oculta el volcado NOTE_TABLE_* del auto-test.
+  python 8b_monitor_midi.py --port COM7 [--raw]      (requiere pyserial)
 """
 
 import argparse
