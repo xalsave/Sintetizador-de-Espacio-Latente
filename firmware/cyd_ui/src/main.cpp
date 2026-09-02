@@ -1,7 +1,7 @@
-// main.cpp - CYD (ESP32-2432S028R) - Bloque A (20 ago 2026)
+// main.cpp - CYD (ESP32-2432S028R): lee el tactil y dibuja la onda.
 //
 // Dos cosas a la vez, sobre el mismo UART full-duplex:
-//   TX (IO22, 460800) -> coordenada tactil (x,y) al S3, trama de 6 bytes (S6).
+//   TX (IO22, 460800) -> coordenada tactil (x,y) al S3, trama de 6 bytes.
 //   RX (IO35, 460800) <- onda diezmada que devuelve el S3, y se PINTA.
 //
 // IO35 es input-only, por eso es el pin correcto para RX. Los dos extremos del
@@ -9,8 +9,7 @@
 // CYD_UART_BAUD en el main.cpp del S3.
 //
 // Lo que llega del S3 es dato de DISPLAY, no de audio: 256 puntos int8 para
-// dibujar. La wavetable real (1024 muestras Q15) no pasa por aqui nunca; va del
-// S3 al Daisy por SPI. El grid y la bilineal siguen viviendo solo en el S3.
+// dibujar. La wavetable real (1024 muestras Q15) va del S3 al Daisy por SPI.
 //
 // Validacion por pasos:
 //   1) Solo la CYD, sin el S3: al arrancar sale el patron de prueba de colores.
@@ -47,67 +46,37 @@
 #define WAVE_HEADER 0x5A
 #define WAVE_POINTS 256
 
-// --- Calibracion del tactil (valores CRUDOS del ADC del XPT2046 en esquinas) --
+// --- Calibracion del tactil (valores CRUDOS del ADC del XPT2046) -------------
 //
-// 27 ago 2026 - GIRO DE 180 GRADOS. La CYD va montada al reves en el panel para
-// que el USB-C quede lejos del OLED, asi que se pasa de setRotation(1) a
-// setRotation(3) en la pantalla Y en el tactil. La libreria de PaulStoffregen
-// SI aplica la rotacion (XPT2046_Touchscreen.cpp, update(): case 3 hace
-// xraw = 4095 - x, yraw = 4095 - y, que es el espejo exacto del case 1), pero
-// por eso mismo los cuatro numeros de abajo dejan de valer tal cual: hay que
-// espejarlos tambien, con lim_nuevo = 4095 - lim_viejo cruzando min con max.
+// La CYD va montada girada 180 grados en el panel (USB-C lejos del OLED), por
+// eso pantalla y tactil usan setRotation(3). La libreria XPT2046_Touchscreen
+// aplica la rotacion (case 3: xraw = 4095 - x, yraw = 4095 - y), asi que la
+// calibracion del panel completo con rotacion 1 (X 133..3947, Y 193..3897)
+// queda espejada: X 148..3962, Y 198..3902.
 //
-//   X: 133..3947  ->  4095-3947=148 .. 4095-133=3962
-//   Y: 193..3897  ->  4095-3897=198 .. 4095-193=3902
-//
-// RECORTE DE LA VENTANA DEL PANEL: el hueco impreso es de 56 x 45,5 mm sobre un
-// area visible de 59,5 x 45. En vertical la ventana es MAS ALTA que el area
-// visible, asi que Y no se recorta. En horizontal se tapan 3,5 mm, y no a
-// partes iguales: el labio izquierdo entra 4 mm mas que el derecho, o sea
-// L + R = 3,5 con L = R + 4  ->  L = 3,75 mm y R = -0,25 mm (el borde derecho
-// del hueco cae justo en el limite del area visible, o un pelo fuera).
-//
-// Sobre la escala cruda: 3962-148 = 3814 cuentas para 59,5 mm = 64,1 cuentas/mm,
-// luego 3,75 mm son ~240 cuentas. Solo UNO de los dos extremos de X se mete esas
-// 240 cuentas: cual de los dos depende de hacia donde apunta el eje X crudo con
-// la placa ya girada, y eso NO se puede deducir sobre el papel.
-//
-// >>> CALIBRAR CON LA PLACA YA MONTADA EN LA CARCASA. Procedimiento: flashear
-// con estos valores, abrir el monitor serie (que ya imprime "crudo=(x,y)" en
-// cada toque), tocar las cuatro esquinas del hueco VISIBLE y escribir aqui los
-// cuatro numeros leidos. La prediccion de arriba sirve de comprobacion: el
-// extremo que se mueva deberia hacerlo unos 240 cuentas, no 20 ni 800.
-//
-// >>> CALIBRACION MEDIDA EN BANCO, 27 ago 2026, con la placa YA MONTADA en la
-// carcasa. Tocando las cuatro esquinas del hueco visible del panel:
+// Medido en banco con la placa YA MONTADA en la carcasa, tocando las cuatro
+// esquinas del hueco visible del panel:
 //
 //        sup. izq. (480, 480)          sup. der. (3730, 250)
 //        inf. izq. (480,3730)          inf. der. (3730,3730)
 //
 // Hay DOS ventanas, y a proposito no son la misma:
 //
-//   VISIBLE (450..3730)  lo que asoma por el hueco del panel, medido en banco
-//                        tocando las cuatro esquinas. Solo se usa para calcular
-//                        el area de DIBUJO (VIS_* mas abajo), para que la imagen
-//                        llene todo lo que se ve.
+//   VISIBLE (450..3730)  lo que asoma por el hueco del panel. Solo se usa para
+//                        calcular el area de DIBUJO (VIS_* mas abajo).
 //
 //   CAPTURA (600..3580)  la que decide que toques valen. 150 cuentas (~2,5 mm)
-//                        mas estrecha por cada lado.
+//                        mas estrecha por cada lado: el labio impreso apoya
+//                        sobre el cristal en todo el perimetro y genera
+//                        pulsaciones fantasma pegadas al borde (una que se
+//                        colaba daba crudo (3714, 643), a 16 cuentas del limite).
 //
-// El labio impreso apoya sobre el cristal en todo el perimetro y genera
-// pulsaciones fantasma pegadas al borde. Una que se colaba daba crudo
-// (3714, 643): a solo 16 cuentas del limite derecho, por eso pasaba el filtro.
-// Con 600..3580 queda fuera con holgura de sobra.
-//
-// Se abandonaron los ajustes finos por esquina: el tactil esta un pelo girado
-// respecto al hueco y un mapeo rectangular no puede corregir un giro, asi que
-// mas vale un cuadrado simetrico y predecible.
+// No hay ajuste fino por esquina: el tactil esta un pelo girado respecto al
+// hueco y un mapeo rectangular no puede corregir un giro.
 //
 // OJO: es la ventana de CAPTURA la que se mapea a 0..65535, no la visible. Asi
-// el espacio latente se sigue alcanzando entero de extremo a extremo; lo unico
-// que se pierde son ~2,5 mm de recorrido del dedo por lado, no rango de timbre.
-// (La ventana visible no necesita constante propia: solo se usa una vez, para
-//  sacar los VIS_* de mas abajo, y ahi va la cuenta escrita.)
+// el espacio latente se alcanza entero; lo que se pierde son ~2,5 mm de
+// recorrido del dedo por lado, no rango de timbre.
 int TS_MINX = 600,  TS_MAXX = 3580;    // ventana de CAPTURA, para el tactil
 int TS_MINY = 600,  TS_MAXY = 3580;
 
@@ -125,15 +94,11 @@ static const int SCR_H    = 240;
 // --- Area VISIBLE por la ventana del panel, en pixeles -----------------------
 // El panel impreso tapa un borde del cristal, asi que pintar de 0 a 320 deja
 // parte de la interfaz debajo del plastico. Estos cuatro numeros salen de pasar
-// la ventana VISIBLE a pixeles (450..3730 en crudo, NO la de captura),
-// sabiendo que el panel COMPLETO iba de 148 a 3962 en X y de 198 a 3902 en Y
-// (la calibracion anterior al recorte, ya espejada por el giro de 180):
+// la ventana VISIBLE a pixeles (450..3730 en crudo, NO la de captura), con el
+// panel COMPLETO en 148..3962 (X) y 198..3902 (Y), mas 1 px de margen:
 //
 //   x0 = (450-148)/(3962-148) * 320 =  25      y0 = (450-198)/(3902-198) * 240 = 16
 //   x1 = (3730-148)/(3962-148)* 320 = 300      y1 = (3730-198)/(3902-198)* 240 = 229
-//
-// Solo 1 px de margen: la primera version dejaba 2-3 px por lado "por si acaso"
-// y se notaba el desperdicio en pantalla. La ventana esta medida, no estimada.
 static const int VIS_X0 = 26;
 static const int VIS_X1 = 301;
 static const int VIS_Y0 = 17;
@@ -146,8 +111,6 @@ static const int VIS_H  = VIS_Y1 - VIS_Y0;
 //   33..51  banda de estado x=/y=/seq/err
 //   56..227 recuadro de la onda  ->  PLOT_TOP-3 = 56, y 5 px de aire tras la
 //                                    banda de estado para que no se toquen.
-// La version anterior ponia el recuadro en 57 y la banda de estado acababa
-// justo en 57: la linea de arriba del rectangulo quedaba comida por el texto.
 static const int PLOT_TOP = VIS_Y0 + 42;                     // 59
 static const int PLOT_BOT = VIS_Y1 - 5;                      // 224
 static const int PLOT_CY  = (PLOT_TOP + PLOT_BOT) / 2;       // eje 0 de la onda
@@ -174,7 +137,7 @@ static uint32_t s_bad       = 0;    // tramas descartadas por checksum
 static int16_t s_prev_y[WAVE_POINTS];
 static bool    s_have_prev = false;
 
-// ============================ UART: envio (S6) ===============================
+// ============================ UART: envio ====================================
 
 // Trama de 6 bytes: 0xA5, x_hi, x_lo, y_hi, y_lo, checksum(XOR de 1..4)
 static void send_coord(uint16_t x, uint16_t y)
@@ -326,7 +289,7 @@ void setup()
     tft.fillScreen(COLOR_BG);
     draw_test_pattern();
 
-    // UART con el S3, ahora en los dos sentidos.
+    // UART con el S3, en los dos sentidos.
     // El buffer de RX por defecto (256 B) se queda justo por debajo de los 260
     // que ocupa una trama de onda: hay que agrandarlo, y antes del begin().
     Serial1.setRxBufferSize(1024);
@@ -367,11 +330,9 @@ void loop()
         if (ts.tirqTouched() && ts.touched()) {
             TS_Point p = ts.getPoint();   // p.x, p.y crudos
 
-            // Fuera de la ventana util -> se IGNORA por completo. Ni se envia
-            // wavetable al S3, ni se repinta la coordenada del display: el
-            // instrumento se queda exactamente como estaba. Antes se recortaba
-            // con constrain(), asi que un contacto del plastico de la carcasa
-            // se enviaba igual, clavado al borde del espacio latente.
+            // Fuera de la ventana util -> se IGNORA por completo, no se recorta
+            // con constrain(): si no, un contacto del plastico de la carcasa se
+            // enviaria igual, clavado al borde del espacio latente.
             if (p.x < TS_MINX || p.x > TS_MAXX ||
                 p.y < TS_MINY || p.y > TS_MAXY) {
                 Serial.printf("crudo=(%4d,%4d)  [fuera de ventana, ignorado]\n",
