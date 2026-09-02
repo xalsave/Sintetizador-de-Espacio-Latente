@@ -1,19 +1,15 @@
-// main.cpp - Sesion 6/7 (S3): genera la wavetable por interpolacion bilineal
-// (S6) y, tras cada toque, la envia al Daisy por SPI (S7). Bloque A (20 ago):
-// ademas la devuelve diezmada a la CYD para que la dibuje.
+// main.cpp - Firmware del ESP32-S3: genera la wavetable por interpolacion
+// bilineal del grid y, tras cada toque, la envia al Daisy por SPI y la devuelve
+// diezmada a la CYD para que la dibuje.
 //
-// Dos entradas a la vez:
+// Entradas:
 //   1) UART en GPIO18  <- trama de 6 bytes de la CYD (entrada real).
 //   2) Texto "x y" por USB (Serial0) <- util para depurar sin la CYD.
 //
-// Salida:
+// Salidas:
 //   - Por USB (Serial0): verificacion (celda+pesos, resumen, volcado WAVE_*).
-//   - Por SPI (maestro): la misma wavetable de 1024 muestras al Daisy (S7).
+//   - Por SPI (maestro): la wavetable de 1024 muestras al Daisy.
 //   - Por UART en GPIO17: 256 puntos int8 a la CYD, SOLO para pintar.
-//
-// NO se toca ni el grid ni la interpolacion bilineal (S6, ya validados con
-// 6_validate_s3.py) ni el SPI hacia el Daisy (S7, congelado): el bloque A
-// solo anade un emisor mas sobre el UART que ya existia.
 
 #include <Arduino.h>
 #include <math.h>
@@ -26,8 +22,8 @@
 #define CYD_TX_PIN   17        // pin del S3 hacia la CYD (canal de vuelta, IO35)
 #define CYD_UART_BAUD 460800   // tiene que coincidir con el Serial1 de la CYD
 
-// Pines SPI del S3 hacia el Daisy (confirmados en S7; FSPI nativo del S3,
-// libres del flash/PSRAM octal del N16R8 y del UART de la CYD en GPIO18).
+// Pines SPI del S3 hacia el Daisy (FSPI nativo del S3, libres del flash/PSRAM
+// octal del N16R8 y del UART de la CYD en GPIO18).
 #define SPI_SCK_PIN  12
 #define SPI_MOSI_PIN 11
 #define SPI_MISO_PIN 13        // sin uso (Daisy en RX_ONLY), cableado por coherencia
@@ -68,10 +64,10 @@ static void handle_coords(uint16_t x, uint16_t y, const char* src)
     // Confirmacion corta: coordenada recibida + celda/pesos usados.
     Serial0.printf("# [%s] coord=(%u,%u)  celda X[%d->%d] fx=%.3f  Y[%d->%d] fy=%.3f\n",
                    src, x, y, loc.ix0, loc.ix1, loc.fx, loc.iy0, loc.iy1, loc.fy);
-    // S7: enviar la wavetable recien calculada al Daisy por SPI.
+    // Enviar la wavetable recien calculada al Daisy por SPI.
     uint16_t seq = spi_send_wavetable(g_wave);
     Serial0.printf("# SPI enviado seq=%u (%d muestras)\n", seq, TABLE_LEN);
-    // Bloque A: y de vuelta a la CYD, la misma onda diezmada para que la pinte.
+    // Y de vuelta a la CYD, la misma onda diezmada para que la pinte.
     uint16_t wseq = wave_send(g_wave, TABLE_LEN);
     Serial0.printf("# UART onda -> CYD seq=%u (%d puntos int8)\n", wseq, WAVE_TX_POINTS);
     Serial0.println("tabla encontrada");
@@ -121,8 +117,8 @@ void setup()
     Serial0.printf("SPI maestro -> Daisy: SCK=%d MOSI=%d MISO=%d CS=%d @10MHz modo0\n",
                    SPI_SCK_PIN, SPI_MOSI_PIN, SPI_MISO_PIN, SPI_CS_PIN);
 
-    // UART fisico con la CYD, ahora en los dos sentidos: recibimos la coordenada
-    // por GPIO18 y devolvemos la onda para pintar por GPIO17.
+    // UART fisico con la CYD en los dos sentidos: recibimos la coordenada por
+    // GPIO18 y devolvemos la onda para pintar por GPIO17.
     uart_rx_begin(CYD_RX_PIN, CYD_TX_PIN, CYD_UART_BAUD);
 
     // SPI maestro hacia el Daisy.

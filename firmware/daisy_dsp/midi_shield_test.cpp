@@ -1,33 +1,19 @@
-// midi_shield_test.cpp
-// -----------------------------------------------------------------------------
-// TEST MINIMO DE MIDI (de-risking). SOLO MIDI: sin audio, sin SPI, sin ADSR.
-// Objetivo unico: verificar que el Keystep MK2 envia y que el MIDI shield (6N138)
-// pasa correctamente la senal al Daisy por USART1 (D14).
+// midi_shield_test.cpp - Prueba aislada de MIDI: sin audio, sin SPI.
+// Verifica que el Keystep envia y que el MIDI shield (6N138) pasa la senal al
+// Daisy por USART1 (D14). NO es el firmware del instrumento; ese es
+// SintetizadorEspacioLatente.cpp.
 //
-// Este NO es el firmware del instrumento; es una prueba de aislamiento. Para
-// volver al firmware de S8, recompila SintetizadorEspacioLatente.cpp.
+// Indicadores:
+//  - LED del Daisy: 3 parpadeos al arrancar; encendido mientras haya tecla pulsada.
+//  - USB serie (115200): imprime cada evento MIDI y un latido cada 2 s con el
+//    total de eventos, para distinguir "vivo sin MIDI" de "muerto".
+//    Si solo ves el latido, revisa los 5V del shield, el switch ON/OFF y el cable.
 //
-// Indicadores (dos, para poder diagnosticar con o sin PC):
-//  - LED del Daisy:
-//      * 3 parpadeos al arrancar  -> el firmware de test esta corriendo.
-//      * encendido mientras haya alguna tecla pulsada (Note On/Off).
-//  - USB serie (115200):
-//      * imprime cada evento MIDI recibido (nota, velocity, canal, CC, pitch).
-//      * un "latido" cada 2 s con el total de eventos, para distinguir
-//        "firmware vivo pero sin MIDI" de "firmware muerto".
-//
-// Lectura del resultado:
-//  - Pulsas tecla -> LED se enciende y sale "# NOTE_ON ..."  => la cadena
-//    Keystep -> shield -> D14 FUNCIONA.
-//  - Solo ves el latido y nada al pulsar => NO llega MIDI: revisa 5V del shield,
-//    el switch ON/OFF, y el cable (Keystep MIDI OUT -> shield IN).
-//
-// Cableado (igual que S8):
+// Cableado:
 //   shield RX (pin 0)  -> Daisy D14 (USART1 RX, PB7)
 //   shield GND         -> Daisy GND (comun)
 //   shield 5V          -> 5V reales (fuente de laboratorio), GND comun
 //   Keystep MIDI OUT   -> shield IN ;  switch del shield en ON
-// -----------------------------------------------------------------------------
 
 #include "daisy_seed.h"
 
