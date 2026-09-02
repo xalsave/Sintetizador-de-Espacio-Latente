@@ -10,6 +10,7 @@ estructura.
 
 \section{Requisitos y condicionantes de partida}
 \label{sec:requisitos}
+\hypertarget{RE1.2b}{}\label{RE1.2b}
 
 El instrumento tiene que atender dos tareas que operan en escalas de tiempo muy
 distintas. Una es producir una forma de onda nueva cuando el usuario mueve el
@@ -18,8 +19,7 @@ ininterrumpida, sin que una espera de comunicación o un cálculo largo dejen el
 búfer de audio sin llenar. La primera admite unos milisegundos de retraso; la
 segunda no admite ninguno o se tendrán \emph{glitches} audibles.
 
-De ahí sale el condicionante que condiciona todo el diseño y del que ya se tenía consciencia desde
-el capítulo 1. La inferencia de una red neuronal no puede ejecutarse a
+De ahí sale la restricción que gobierna todo el diseño, ya enunciada en el capítulo 1. La inferencia de una red neuronal no puede ejecutarse a
 frecuencia de audio sobre un microcontrolador, pero tampoco necesita hacerlo.
 Un dedo sobre una pantalla no genera información nueva a 48~kHz. Basta con que el
 sistema táctil se lea cada 50~ms, es decir, a 20~Hz. Además, se debe programar para que
@@ -49,6 +49,7 @@ Sobre esa base se fijaron los requisitos que el diseño debía cumplir:
 
 \section{Alternativas consideradas}
 \label{sec:alternativas}
+\hypertarget{RE2.1}{}\label{RE2.1}
 
 Las tres decisiones que dan forma al sistema se tomaron antes de empezar a
 construirlo, contrastando cada una con la opción que se descartaba.
@@ -67,9 +68,9 @@ trabajar a frecuencia de control, ejecutar el decodificador en cada toque
 introduce un tiempo de cálculo variable que complica el modelo. Sobre un procesador
 que además tiene que atender la comunicación con las otras dos placas, esto se traduce 
 en posibles microinterrupciones en el audio. La rejilla precalculada convierte ese cálculo
-en un acceso a memoria y una interpolación, de coste conocido y constante. Se debe recordar
-que el proyecto más cercano hace lo mismo por el mismo motivo, y cabe decir que allí la limitación aparece
-incluso sobre una máquina con \gls{gpu} propia \cite{Hantrakul2018}.
+en un acceso a memoria y una interpolación, de coste conocido y constante.El trabajo más cercano
+hace lo mismo por el mismo motivo, y allí la limitación aparece incluso sobre una máquina 
+con \gls{gpu} dedicada \cite{Hantrakul2018}.
 
 El precio de esa decisión es que la resolución del espacio queda congelada en el
 momento de generar la rejilla, y que esa rejilla ocupa memoria. El decodificador
@@ -98,9 +99,10 @@ después validar cada etapa por separado.
 Sustituir la tabla en reproducción mientras suena una nota produce un salto en
 la señal, audible como un chasquido. La transición puede resolverse de dos
 formas. Una es esperar a que el acumulador de fase complete el ciclo y cambiar
-la tabla justo en ese punto, en este caso se necesitaría doble búfer: uno para la forma de onda
-que se está reproduciendo y otra para la nueva. La otra es mezclar la tabla
-antigua y la nueva durante unos milisegundos, con pesos complementarios.
+la tabla justo en ese punto. La otra es mezclar la tabla
+antigua y la nueva durante unos milisegundos, con pesos complementarios. En 
+ambos casos se necesitaría doble búfer: uno para la forma de onda
+que se está reproduciendo y otra para la nueva.
 
 Se optó por la mezcla, porque funciona con independencia de dónde esté la fase
 en el momento del cambio y porque encaja con el uso previsto en el que el dedo
@@ -163,7 +165,7 @@ es la única en la que interviene la red neuronal. El conjunto de formas de onda
 estandariza, se entrena el autoencoder variacional, se muestrea el plano latente
 en una rejilla regular decodificando cada nodo. El resultado se exporta como
 una cabecera en C que se compila junto al firmware del ESP32-S3. La segunda
-ocurre en el instrumento cuando se recibe coordenadas con cada toque. 
+ocurre en el instrumento cuando se reciben coordenadas con cada toque. 
 Esta no ejecuta ninguna red, solo consulta la rejilla, interpola y envía la forma de onda resultante al
 procesador de audio.
 
@@ -179,7 +181,7 @@ procesador de audio.
 Conviene aclarar qué contiene la rejilla, porque es el punto que sostiene toda
 la estrategia. Los 256 nodos no son una selección de las ondas del conjunto de datos.
 Una vez entrenado el modelo, el codificador reparte las ondas originales
-como puntos dispersos por un plano continuo como se pudo observar antes. El decodificador sabe generar una
+como puntos dispersos por un plano continuo. El decodificador sabe generar una
 onda para cualquier posición de ese plano, incluidas las que no corresponden a
 ninguna onda real. Generar la rejilla es muestrear esa superficie continua en
 cruces regulares, de modo que la mayoría de los nodos son formas de onda nuevas.
@@ -231,8 +233,8 @@ formato de las tramas y el motor de audio.
 
 El tamaño de 1024 muestras merece justificación porque las ondas del conjunto de datos
 tienen 600. Una onda de 600 muestras contiene como mucho 300 armónicos, que es
-el límite de Nyquist del propio ciclo. Remuestrear a 1024, la menor potencia de dos por
-encima de ese valor, recoge entonces todo el contenido
+el límite de Nyquist del propio ciclo. Remuestrear a 1024, la menor potencia de dos por 
+encima de las 600 muestras originales, recoge entonces todo el contenido
 armónico disponible sin desperdicio. Que sea potencia de dos aporta además una ventaja
 práctica en la reproducción, ya que el retorno al inicio de la tabla se resuelve
 con una máscara de bits en lugar de con una operación de módulo.

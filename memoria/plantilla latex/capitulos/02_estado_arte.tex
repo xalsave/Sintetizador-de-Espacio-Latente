@@ -59,8 +59,8 @@ reparten esos cuatro tramos a lo largo de la duración de la nota.
 \begin{figure}[htbp]
     \centering
     \includegraphics[width=0.85\textwidth]{adsr.pdf}
-    \caption{Envolvente ADSR. Los tres primeros tramos dependen de cuánto tiempo
-             se mantenga pulsada la tecla; la liberación empieza al soltarla.}
+    \caption{Envolvente ADSR. Los dos primeros tramos duran un valor fijo. El tercer tramo depende de cuánto tiempo
+             se mantenga pulsada la tecla. La liberación empieza al soltarla.}
     \label{fig:adsr}
 \end{figure}
 
@@ -179,7 +179,7 @@ situadas cerca unas de otras en un espacio. Es lo denominado el espacio latente.
 El interés de esta arquitectura no está en la reconstrucción en sí, que sería
 trivial si no se impusiera ninguna restricción, sino en el cuello de botella. Al
 obligar a que toda la información pase por un número reducido de valores, la red
-se ve forzada quedarse con los rasgos que de verdad
+se ve forzada a quedarse con los rasgos que de verdad
 distinguen unas entradas de otras. Aplicado a un conjunto de formas de onda, el
 codificador acaba situando cerca las que comparten características espectrales,
 sin que se le haya indicado en ningún momento qué es un armónico o qué es un timbre.
@@ -300,7 +300,7 @@ El trabajo de Hantrakul y Yang \cite{Hantrakul2018} es el precedente más
 directo. Reutilizan el modelo NSynth WaveNet ya entrenado como autoencoder de
 tablas para generar formas de onda de 512 muestras e interpolar entre ellas en
 el espacio latente. El resultado se distribuye como \emph{plugin} VST/AU para
-estación de trabajo de audio digital.
+\gls{daw}.
 
 Dos observaciones suyas resultan especialmente importantes aquí. La primera es
 de coste. Los propios autores miden unos 4 segundos para codificar y unos 7 para
@@ -336,7 +336,7 @@ basado en un autoencoder variacional cuyo espacio latente se divide en subespaci
 asociados a distintos estilos de forma de onda. El generador se condiciona además 
 con descriptores tímbricos y morfológicos, de modo que el usuario puede manipular 
 cada subespacio de forma independiente en lugar de moverse por un plano indiferenciado.
-Los autores lo prototipan también como \emph{plugin} de oscilador para estación de trabajo de audio digital, y
+Los autores lo prototipan también como \emph{plugin} de oscilador para \gls{daw}, y
 señalan que la restricción de velocidad de cálculo sigue siendo el principal
 obstáculo cuando se pretende decodificar una forma de onda para cada bloque de
 audio.

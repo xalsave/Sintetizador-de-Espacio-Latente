@@ -86,7 +86,7 @@ se configura de recepción exclusiva y con el selector de chip gobernado por
 hardware, así que el firmware no tiene que vigilar ninguna línea por su cuenta.
 
 La pieza que hace esto viable es el \gls{dma}. Los 2054 bytes de la trama tardan
-1,6~ms en entrar, que a 48~kHz son unos treinta bloques de audio. Atender el bus
+1,6~ms en entrar, que a 48~kHz son casi dos bloques de audio. Atender el bus
 byte a byte desde el procesador dejaría el audio sin llenar durante todo ese
 tiempo. Con acceso directo a memoria la transferencia ocurre sin intervención
 del procesador, que sigue generando muestras mientras la trama entra. El búfer
@@ -106,10 +106,9 @@ hay nada que validar.
 El tratamiento de la trama sigue el criterio del apartado~\ref{sec:enlaces}. Se
 comprueba la cabecera de sincronización, se recalcula el \gls{crc} sobre el
 contenido y se compara con el recibido. Solo si las dos comprobaciones pasan se
-copia la tabla y se pide la transición. Conviene señalar el orden, porque la
-recepción se vuelve a armar \emph{antes} de decidir si la trama servía o no,
-de forma que el bus queda escuchando cuanto antes y una trama dañada no cuesta
-más tiempo que una buena. Cuando algo falla no se hace nada más, y el
+copia la tabla y se pide la transición. Conviene señalar el orden, porque la recepción
+se rearma inmediatamente después de validar y copiar, antes de escribir nada por el 
+puerto serie. Cuando algo falla no se hace nada más, y el
 instrumento sigue sonando con la tabla anterior en lugar de reproducir muestras
 corrompidas. La comprobación de que el transporte es exacto, con su error medido
 en \gls{lsb}, está en el capítulo~\ref{cap:pruebas}.
@@ -142,7 +141,7 @@ la amplitud en ese punto concreto.
 \begin{figure}[htbp]
     \centering
     \includegraphics[width=\textwidth]{crossfade.pdf}
-    \caption{La transición entre dos celdas contiguas de la rejilla, las mismas
+    \caption{La transición entre dos ondas de celdas contiguas de la rejilla, las mismas
              que alcanza la coordenada del apartado~\ref{sec:bilineal}. A la
              izquierda, los pesos a lo largo de los 20~ms. En el centro, las dos
              tablas y su mezcla a mitad de camino. A la derecha, el nivel de
@@ -245,15 +244,14 @@ Esto se hace debido a que el reataque de la envolvente es suave, no baja a cero.
 al tocar una nota nueva mientras suena otra el salto de ganancia caería sobre una señal en
 marcha y se oiría como un chasquido.
 
-Toda modificación de la envolvente, se aplaza a una
+Toda modificación de la envolvente se aplaza a una
 bandera y se ejecuta dentro del callback de audio. La regla que se sigue en
 todo el firmware es que quien llama al procesado de un bloque es también quien
 lo modifica, porque las funciones de \texttt{DaisySP} no están pensadas para que
 se las reconfigure desde otro hilo mientras están procesando.
 
-Al final de la cadena hay una ganancia global fija de 0,8  porque amplificar antes del procesado sube
-señal y ruido por igual. Sin riesgo de recorte, ya que la mezcla de la
-transición no añade ganancia.
+Al final de la cadena hay una ganancia global fija de 0,8 porque compensar el nivel 
+aguas abajo, en un previo, amplificaría señal y ruido por igual.
 
 \section{Envolvente y filtro desde el panel}
 \label{sec:panel}
@@ -283,12 +281,15 @@ peldaño se oye como un crujido.
     \label{fig:suavizado}
 \end{figure}
 
-Los tiempos y la frecuencia de corte se mapean en escala exponencial, no
-lineal, porque el oído percibe ambas magnitudes de forma logarítmica. El panel
-derecho de la figura compara las dos opciones. Los rangos son de 1~ms a 2~s para
-el ataque, de 5~ms a 2~s para el decaimiento, de 5~ms a 4~s para la liberación y
-de 30~Hz a 12~kHz para el corte. El sostenimiento es un nivel y no un tiempo,
-así que se mapea lineal. El techo de 12~kHz no es arbitrario, ya que el filtro
+La frecuencia de corte se mapea en escala exponencial, no lineal, porque el
+oído percibe la altura de forma logarítmica, y el panel derecho de la figura
+compara las dos opciones. Los tres tiempos de la envolvente van en cambio en
+escala lineal, con la contrapartida de que el tramo de 1 a 100~ms, que es el
+que decide el carácter de un ataque percusivo, cae dentro del primer cinco por
+ciento del giro del mando. Los rangos son de 1~ms a 2~s para el ataque, de
+5~ms a 2~s para el decaimiento, de 5~ms a 4~s para la liberación y de 30~Hz a
+12~kHz para el corte. El sostenimiento es un nivel y no un tiempo, así que
+también se mapea lineal. El techo de 12~kHz no es arbitrario, ya que el filtro
 empleado exige que su frecuencia de corte quede por debajo de un tercio de la
 frecuencia de muestreo \cite{DaisySP}.
 
@@ -341,31 +342,41 @@ sigue sonando igual.
 
 El bus se configura a la más rápida de las tres velocidades que ofrece la
 biblioteca, que esta documenta como unos 886~kHz efectivos y no como el
-megahercio nominal \cite{libDaisy}. Cada refresco completo manda el kilobyte
-entero de la memoria de imagen y bloquea del orden de diez milisegundos, lo que
-obliga a ser cuidadoso con la cadencia. La rutina de dibujo compara lo que
-tendría que pintar con lo que ya está pintado y sale sin tocar el bus si no ha
-cambiado nada visible, de modo que tocando el teclado sin mover mandos el
-display no consume ni un ciclo. Los 80~ms del temporizador son un límite
-superior al refresco, no una cadencia fija.
+megahercio nominal \cite{libDaisy}. La rutina de dibujo compara lo que tendría
+que pintar con lo que ya está pintado y sale sin tocar el bus si no ha cambiado
+nada visible, de modo que tocando el teclado sin mover mandos el display no
+consume ni un ciclo, y los 80~ms del temporizador son un límite superior al
+refresco y no una cadencia fija.
 
-Lo que muestra es el mando que se está tocando, con su nombre en grande, el
-valor en unidades reales y una barra con la posición física del control; abajo,
-de forma permanente, el tipo de filtro. Con seis mandos y una pantalla de este
-tamaño, repartirla en seis casillas diminutas la habría dejado ilegible justo
-cuando hace falta leerla, que es mientras se gira un mando. El foco lo roba el
-último control movido más de un 1\,\% de su recorrido, y cada canal lleva su
-propia referencia, así que el ruido nunca acumula deriva suficiente para
-disparar el cambio. La barra aporta lo que el número no dice, que es cuánto
-recorrido queda, algo que en una escala exponencial no se deduce del valor.
+Un refresco sano manda el kilobyte entero de la memoria de imagen y cuesta del
+orden de diez milisegundos, pero el transporte de la biblioteca espera hasta un
+segundo por cada página, así que con el bus colgado un solo refresco congela el
+bucle principal durante segundos y con él la atención al \gls{midi} y al
+\gls{spi}. Por eso la pantalla se apaga sola, y no se vuelve a tocar el bus en
+toda la sesión, cuando tres refrescos pasan de 100~milisegundos. Se
+prefiere perder la pantalla a perder el instrumento. Al sondeo de arranque le
+precede además una maniobra de desbloqueo, nueve pulsos de reloj y una
+condición de parada, que libera a un esclavo atascado a mitad de un byte.
+
+Lo que muestra es el mando que se está tocando. Una línea de cabecera da su
+nombre y su valor en unidades reales, y debajo va una gráfica, la envolvente
+para los cuatro mandos del \gls{adsr} y la respuesta del filtro para el corte,
+la resonancia y el selector. La gráfica se dibuja con los mismos valores
+mapeados que usa el audio, así que la figura es la que de verdad suena. Con
+siete \gls{gpio} y una pantalla de este tamaño, repartirla en casillas diminutas la
+habría dejado ilegible justo cuando hace falta leerla, que es mientras se gira
+un mando. El foco lo roba el último control movido más de un 3\,\% de su
+recorrido, y cada canal lleva su propia referencia. Ese margen está puesto por
+encima del ruido que entrega el panel real, porque un canal cuyo cursor tiemble
+más que el umbral se queda con el foco de forma permanente; subirlo no cuesta
+resolución de ajuste, ya que solo decide a qué canal mira la pantalla y no cómo
+se aplica el valor.
 
 Que esta pantalla cuelgue del procesador de audio y no de la \gls{cyd}, que ya
 tiene una, lo decide el sentido del flujo de datos. La cadena es unidireccional
 y los mandos están en el extremo final, así que pintarlos en la \gls{cyd}
 habría exigido remontar los dos enlaces al revés, incluido el \gls{spi} del
-apartado~\ref{sec:emisor-spi}. Conectando el display donde ya viven esos datos
-no hace falta protocolo nuevo, y cada pantalla enseña lo suyo de forma
-permanente sin ninguna lógica de vuelta a una vista base.
+apartado~\ref{sec:emisor-spi}.
 
 \section{Arranque, instrumentación y recursos}
 \label{sec:instrumentacion}
@@ -383,13 +394,11 @@ estaban mezcladas, a saber, si no llega ni un byte por el cable o si llega pero
 falla el tratamiento de las notas. El principio general es que un firmware que
 solo habla cuando todo va bien no se puede depurar.
 
-En cuanto a recursos, el firmware ocupa el 85,9\,\% de los 128~kB de memoria de
+En cuanto a recursos, el firmware ocupa el 82,7\,\% de los 128~kB de memoria de
 programa interna del microcontrolador, frente al 70,6\,\% que ocupaba antes de
 añadir el display, el 65,3\,\% al cerrar la cadena completa y el 50,8\,\% con
-solo el motor de tabla. El grueso del último salto son la fuente grande de la
-pantalla y las funciones de formateo de texto, así que esa fuente es el primer
-recorte disponible si alguna ampliación pidiera sitio. La placa dispone además
-de 8~MB de memoria de programa externa y 64~MB de memoria dinámica
+solo el motor de tabla. La placa dispone además de 8~MB de memoria de programa 
+externa y 64~MB de memoria dinámica
 \cite{DaisySeed} que este firmware no llega a usar, de modo que el límite no es
 de la placa sino de la región interna contra la que se enlaza.
 

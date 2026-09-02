@@ -168,11 +168,10 @@ números es la negativa, y es que el raíl no se hunde al cargarlo.
 
 La lectura que de verdad importa cierra la cuestión que dejó pendiente el
 apartado~\ref{sec:alimentacion}. Sobre la placa de prototipado la entrada del
-procesador de audio rondaba los 3,4~V, aunque esa cifra nunca fue de fiar,
-porque la lectura fluctuaba al repetirla sin haber tocado nada, que es la firma
-de un contacto intermitente. Esa inestabilidad era ya el indicio de que buena
-parte de la pérdida la ponían los contactos y no el filtro. Soldar lo confirma. Entre
-el raíl aguas abajo del interruptor, 4,894~V, y la entrada del procesador de
+procesador de audio rondaba los 3,4~V, aunque esa cifra nunca fue de fiar, porque 
+la resistencia del camino fluctuaba al repetir la medida sin haber tocado nada. Esa inestabilidad era ya el indicio de que buena
+parte de la pérdida la ponían los contactos y no el filtro. Al soldar y mejorar los contactos
+esto se confirmó. Entre el raíl aguas abajo del interruptor, 4,894~V, y la entrada del procesador de
 audio, 4,354~V, hay 0,540~V, y la caída medida directamente sobre la
 resistencia del filtro es de 0,543~V. Las dos cifras coinciden dentro de tres
 milivoltios, de modo que ya no queda pérdida parásita en el camino y todo lo
@@ -272,12 +271,19 @@ Las dos primeras filas son el mismo resultado con dos estímulos distintos,
 porque el nivel de salida depende de la velocidad de pulsación. Los 85~mV
 corresponden a una pulsación suave y no caracterizan al instrumento; la cifra
 que lo caracteriza es la de velocidad máxima, 198,7~mV eficaces, es decir
-$-14$~dBV. Eso es nivel de línea de consumo, del orden de lo que entrega
-cualquier reproductor doméstico, así que el instrumento se conecta directamente
-a una entrada de línea sin adaptación y sin riesgo de saturarla. La componente
-continua es de un milivoltio, despreciable, y confirma que la salida no
-arrastra ningún desequilibrio capaz de desplazar un altavoz de su posición de
-reposo.
+$-14$~dBV. Conviene decir lo que esa cifra no es. El códec entrega 1~V eficaz a
+fondo de escala \cite{DaisySeed} y la ganancia global del firmware es de 0,8,
+así que una tabla normalizada a pico podría llegar a unos 0,8~V eficaces, y la
+medida queda unos 12~dB por debajo. Parte de esa diferencia la pone el propio
+aparato, que solo integra de 40~Hz a 1~kHz y deja fuera los armónicos de una
+onda rica, y parte el punto de trabajo, porque el nivel depende del
+sostenimiento, del corte y del tipo de filtro, y esos ajustes no se anotaron
+durante la medida. Es, por tanto, un nivel de línea de consumo en las
+condiciones en que se midió, del orden de lo que entrega un reproductor
+doméstico, así que el instrumento se conecta a una entrada de línea sin
+adaptación y sin riesgo de saturarla. La componente continua es de un
+milivoltio, despreciable, y confirma que la salida no arrastra ningún
+desequilibrio capaz de desplazar un altavoz de su posición de reposo.
 
 El suelo de ruido merece un apunte por el modo en que se comprobó. Con el
 instrumento encendido y sin tocar ninguna nota, el jack entrega 4,3~mV eficaces
@@ -375,7 +381,7 @@ El cursor del potenciómetro de sostenimiento tiembla en torno a un dos por
 ciento de su recorrido, bastante más de lo que se supuso al fijar el umbral con
 el que un mando roba el foco de la pantalla. El camino analógico lo explica sin
 dificultad, ya que se trata de un cursor de diez kiloohmios cuya señal recorre
-un mazo de treinta y nueve hilos hasta la placa, y el filtrado del
+un mazo de hilos hasta la placa, y el filtrado del
 apartado~\ref{sec:panel-fisico} no basta para ese canal en concreto. Con un
 umbral por debajo de ese temblor el sostenimiento se queda con el foco de forma
 permanente y ningún otro mando llega a mostrarse.
@@ -408,16 +414,21 @@ Queda medido solo como cota lo que la banda del multímetro no alcanza, esto es,
 el rizado de los raíles y la relación señal-ruido de 33~dB. Y queda deducido,
 que no medido, el consumo del procesador de audio, entre 130 y 165~mA.
 
+Tampoco se midieron la carga del procesador de audio ni la latencia entre gesto 
+y sonido. Para esta última solo hay una cota calculada, que suma el periodo de 
+lectura del táctil, la transferencia y la transición y queda por debajo de los 
+75~ms en el peor caso.
+
 Queda sin resolver lo que no cabía en la ventana disponible. El procesador de
 audio funciona medio voltio por debajo de la tensión de entrada que garantiza
-su fabricante, y esta es la única de las cuatro con la causa identificada y la
+su fabricante, y esta es la única de las tres con la causa identificada y la
 corrección propuesta. El display no llega a funcionar, y lo comprobado dice
 dónde no está el fallo, ni en el cable, ni en los resistores, ni en el módulo,
 pero no dónde está. Los bloqueos siguen apareciendo pese a las dos medidas que
 el firmware lleva contra ellos, y lo que se puede medir con un multímetro
 descarta las explicaciones sencillas sin dar con la buena. Y el umbral del foco
 no ha podido comprobarse en marcha, porque la pantalla no se enciende. Las
-cuatro quedan abiertas para una revisión posterior del instrumento, junto con
+tres quedan abiertas para una revisión posterior del instrumento, junto con
 las medidas que este capítulo no ha podido tomar, el pico de arranque, la
 distorsión y la respuesta en frecuencia. Todas ellas exigen instrumentación de
 la que no se dispuso, así que la primera partida de una continuación de este

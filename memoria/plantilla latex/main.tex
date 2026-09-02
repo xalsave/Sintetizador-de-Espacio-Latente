@@ -3,13 +3,13 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-\newcommand{\titulo}{MANUAL DE ESTILO Y DIRECTRICES PARA LA CONFECCIÓN DE LA MEMORIA DEL TRABAJO FIN DE GRADO}
-\newcommand{\tutorA}{nombre}
-\newcommand{\tutorB}{nombre (en su caso)} % Nombre del Cotutor (en su caso)
+\newcommand{\titulo}{Desarrollo de un sintetizador de sonido embebido basado en síntesis wavetable e inteligencia artificial}
+\newcommand{\tutorA}{José Javier López Monfort}
+\newcommand{\tutorB}{} % Nombre del Cotutor (en su caso)
 \newcommand{\tutorE}{} %Tutor empresa (en su caso)
-\newcommand{\curso}{2022-23} %(curso que proceda)
-\newcommand{\autor}{Nombre del autor}
-\newcommand{\fecha}{30  de  septiembre  de  2022} 
+\newcommand{\curso}{2025-26} %(curso que proceda)
+\newcommand{\autor}{Alejandro Saez Vega}
+\newcommand{\fecha}{01  de  septiembre  de  2026} 
 %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %Color de títulos de secciones y subsecciones
@@ -33,16 +33,69 @@
 \thispagestyle{empty}
 
 \section*{Resumen}
-\noindent La memoria del TFG empieza con un breve resumen de entre 150 y 200 palabras, escrito en castellano, valenciano e inglés. Estas páginas van sin numerar.
+\noindent Este Trabajo Fin de Grado presenta el diseño, construcción y
+validación de un sintetizador de sonido digital autónomo que combina la síntesis
+wavetable con un modelo de aprendizaje profundo. El usuario explora de forma
+continua un espacio de timbres aprendido con el dedo sobre una pantalla táctil,
+mientras toca las notas desde un teclado MIDI convencional.
+
+El trabajo se divide en dos fases. En la primera, realizada en el ordenador, se
+entrena un autoencoder variacional con espacio latente bidimensional sobre un
+conjunto público de 4358 formas de onda de un ciclo, y con su decodificador se
+genera una rejilla de 256 tablas que se exporta al sistema embebido. En la
+segunda, el instrumento no ejecuta ninguna red: un ESP32-S3 interpola entre las
+tablas y una placa Daisy Seed, basada en un Cortex-M7, reproduce el resultado en
+tiempo real con transiciones sin discontinuidades, envolvente ADSR y filtro
+gobernados desde un panel analógico.
+
+El prototipo se integra en una carcasa impresa en 3D con alimentación única. La
+cadena de datos se verifica muestra a muestra contra una referencia calculada en
+el ordenador y el aparato se caracteriza eléctricamente. Se recogen también las
+limitaciones encontradas y las líneas de continuación.
 
 
 \section*{Resum}
-\noindent La memoria del TFG comença amb un breu resum d’entre 
-150 i 200 paraules, escrit en castellà, valencià i anglès. Aquestes pàgines van sense numerar.
+\noindent Aquest Treball Final de Grau presenta el disseny, la construcció i la
+validació d'un sintetitzador de so digital autònom que combina la síntesi
+wavetable amb un model d'aprenentatge profund. L'usuari explora de manera
+contínua un espai de timbres aprés amb el dit sobre una pantalla tàctil, mentre
+toca les notes des d'un teclat MIDI convencional.
+
+El treball es divideix en dues fases. En la primera, feta a l'ordinador,
+s'entrena un autoencoder variacional amb espai latent bidimensional sobre un
+conjunt públic de 4358 formes d'ona d'un cicle, i amb el seu descodificador es
+genera una graella de 256 taules que s'exporta al sistema encastat. En la
+segona, l'instrument no executa cap xarxa: un ESP32-S3 interpola entre les
+taules de la graella i una placa Daisy Seed, basada en un Cortex-M7, reprodueix
+el resultat en temps real amb transicions sense discontinuïtats, envolupant ADSR
+i filtre governats des d'un panell analògic.
+
+El prototip s'integra en una carcassa impresa en 3D amb alimentació única. La
+cadena de dades es verifica mostra a mostra contra una referència calculada a
+l'ordinador i l'aparell es caracteritza elèctricament. S'arrepleguen també les
+limitacions trobades i les línies de continuació.
 
 
 \section*{Abstract}
-\noindent The thesis begins with a short abstract (between 150 and 200 words) written in Spanish, Valencian, and English. The cover page and the pages containing the three versions of the abstract are not numbered.
+\noindent This Bachelor's Thesis presents the design, construction and
+validation of a stand-alone digital sound synthesizer that combines wavetable
+synthesis with a deep learning model. The user explores a learned timbre space
+continuously with a finger on a touch screen, while playing notes from a
+conventional MIDI keyboard.
+
+The work is divided into two phases. In the first, carried out on a computer, a
+variational autoencoder with a two-dimensional latent space is trained on a
+public set of 4358 single-cycle waveforms, and its decoder is used to bake a grid
+of 256 tables that is exported to the embedded system. In the second, the
+instrument runs no neural network at all: an ESP32-S3 interpolates between the
+tables of the grid, and a Daisy Seed board, built around a Cortex-M7, plays the
+result in real time with click-free table transitions, an ADSR envelope and a
+filter driven from an analogue control panel.
+
+The prototype is housed in a 3D-printed enclosure with a single power supply.
+The data chain is verified sample by sample against a reference computed on the
+PC, and the device is characterised electrically. The limitations found and the
+lines of future work are also reported.
 
 \newpage
 %----------------- INICIO RESUMEN EJECUTIVO-------------------------------------
@@ -51,7 +104,7 @@
     \textcolor{red}{Esta página debe eliminarse para el TFG del GMAT}: 
     puedes hacerlo con \texttt{\textbackslash setboolean\{GMAT\}\{false\}}
     \\[2mm]}
-%\def\comentarioRESUMEN{\\[2mm]} %Descomentar esta línea para ocultar el comentario
+\def\comentarioRESUMEN{\\[2mm]} %Descomentar esta línea para ocultar el comentario
 %Descomentar la segunda definición de \comentarioRESUMEN para ocultar el comentario
 
 \newboolean{GMAT}\setboolean{GMAT}{false}
@@ -59,9 +112,9 @@
 {
 }
 {
-    \def\TFGTFM{\textcolor{red}{ELEGIR TFG o TFM}} %Elegir TFG o TFM
-    \def\NOMBRETITULO{\textcolor{red}{ELEGIR NOMBRE TITULO}} %Elegir GTIST, GTDM, MUIT o GIFIS
-    \def\NOMBREDISCIPLINA{\textcolor{red}{ELEGIR DISCIPLINA}} %Elegir IT, IFIS o TDM
+    \def\TFGTFM{TFG} %Elegir TFG o TFM
+    \def\NOMBRETITULO{GTIST} %Elegir GTIST, GTDM, MUIT o GIFIS
+    \def\NOMBREDISCIPLINA{IT} %Elegir IT, IFIS o TDM
     
     
     \begin{landscape}
@@ -86,32 +139,15 @@
     \def\ind{\hspace*{3mm}}
     %Aumentar primer parámetro del comando fila correspondiente si las celdas de la tabla dejan de encajar bien
     \cabecera{1.25cm}{CONCEPT (ABET)}{CONCEPTO (traducción)}{¿Cumple?\\(S/N)}{¿Dónde?\\(páginas)}
-    \fila{0.6cm}{1. IDENTIFY:}{1. IDENTIFICAR:}{}{}
-    \fila{0.6cm}{\ind 1.1. Problem statement and opportunity}{\ind1.1. Planteamiento del problema y oportunidad}%
-    {%
-    % S
-    }
-    {%
-    % Opción 1) el desarrollo del concepto ocupa varias páginas consecutivas
-    % Colocamos etiquetas en el inicio y el final del texto:
-    % a) colocar  \label{RE1.1:inicio} justo antes del texto en el que se desarrolla el concepto 1.1
-    % b) colocar  \label{RE1.1:fin} justo después del texto en el que se desarrolla el concepto 1.1
-    % En la tabla insertamos este comando:
-    %\hyperlink{RE1.1:inicio}{\pageref*{RE1.1:inicio}}-\hyperlink{RE1.1:fin}{\pageref*{RE1.1:fin}}
-    %
-    % Opción 2) el desarrollo del concepto está en una o varias páginas no consecutivas
-    % Colocamos  \label{RE1.1:n}, n=1,2,..., cada vez que comienze un fragmento que desarrolla el concepto 1.1
-    % Insertamos en la tabla un comando \hyperlink por cada fragmento (se da ejemplo para dos gragmentos):
-    % \hyperlink{RE1.1:1}{\pageref*{RE1.1:1}}, \hyperlink{RE1.1:2}{\pageref*{RE1.1:2}}
-    }
-    \fila{1.6cm}{\ind1.2. Constraints (standards, codes, needs,\newline\ind\ind requirements \& specifications)}{\ind1.2. Toma en consideración de los condicionantes\newline\ind\ind (normas técnicas y regulación, necesidades,\newline\ind\ind requisitos y especificaciones)}{}{} %CAMBIAR AQUÍ PARA 1.2
-    \fila{0.6cm}{\ind1.3. Setting of goals}{\ind1.3. Establecimiento de objetivos}{}{} %CAMBIAR AQUÍ PARA 1.3
+    \fila{0.6cm}{\ind 1.1. Problem statement and opportunity}{\ind1.1. Planteamiento del problema y oportunidad}{S}{\hyperlink{RE1.1}{\pageref*{RE1.1}}}
+    \fila{1.6cm}{\ind1.2. Constraints (standards, codes, needs,\newline\ind\ind requirements \& specifications)}{\ind1.2. Toma en consideración de los condicionantes\newline\ind\ind (normas técnicas y regulación, necesidades,\newline\ind\ind requisitos y especificaciones)}{S}{\hyperlink{RE1.2}{\pageref*{RE1.2}}, \hyperlink{RE1.2b}{\pageref*{RE1.2b}}}
+    \fila{0.6cm}{\ind1.3. Setting of goals}{\ind1.3. Establecimiento de objetivos}{S}{\hyperlink{RE1.3}{\pageref*{RE1.3}}}
     \fila{0.6cm}{2. FORMULATE:}{2. FORMULAR:}{}{}
-    \fila{0.6cm}{\ind2.1. Creative solution generation (analysis)}{2.1. Generación de soluciones creativas (análisis)}{}{} %CAMBIAR AQUÍ PARA 2.1
-    \fila{1.2cm}{\ind2.2. Evaluation of multiple solutions and\newline\ind\ind decision-making (synthesis)}{\ind2.2. Evaluación de múltiples soluciones y toma de\newline\ind\ind decisiones (síntesis)}{}{} %CAMBIAR AQUÍ PARA 2.2
-    \fila{0.6cm}{3. SOLVE:}{3. RESOLVER:}{}{}https://www.overleaf.com/project/5d91e3b0358aab0001ae4e9d
-    \fila{0.6cm}{\ind3.1. Fulfilment of goals}{\ind3.1. Evaluación del cumplimiento de objetivos}{}{} %CAMBIAR AQUÍ PARA 3.1
-    \pie{1.2cm}{\ind3.2. Overall impact and significance\newline\ind\ind (contributions and practical recommendations)}{\ind3.2. Evaluación del impacto global y alcance\newline\ind\ind (contribuciones y recomendaciones prácticas)}{}{} %CAMBIAR AQUÍ PARA 3.2
+    \fila{0.6cm}{\ind2.1. Creative solution generation (analysis)}{2.1. Generación de soluciones creativas (análisis)}{S}{\hyperlink{RE2.1}{\pageref*{RE2.1}}}
+    \fila{1.2cm}{\ind2.2. Evaluation of multiple solutions and\newline\ind\ind decision-making (synthesis)}{\ind2.2. Evaluación de múltiples soluciones y toma de\newline\ind\ind decisiones (síntesis)}{S}{\hyperlink{RE2.1}{\pageref*{RE2.1}}, \hyperlink{RE2.2}{\pageref*{RE2.2}}}
+    \fila{0.6cm}{3. SOLVE:}{3. RESOLVER:}{}{}
+    \fila{0.6cm}{\ind3.1. Fulfilment of goals}{\ind3.1. Evaluación del cumplimiento de objetivos}{S}{\hyperlink{RE3.1}{\pageref*{RE3.1}}}
+    \pie{1.2cm}{\ind3.2. Overall impact and significance\newline\ind\ind (contributions and practical recommendations)}{\ind3.2. Evaluación del impacto global y alcance\newline\ind\ind (contribuciones y recomendaciones prácticas)}{S}{\hyperlink{RE3.2}{\pageref*{RE3.2}}}
     \end{tablaRE}
     \end{landscape}
 }
@@ -123,7 +159,7 @@
 \thispagestyle{empty}
 \ \\
 \vfill\begin{flushright}
-A mis padres.
+A todas las personas que encontraron en la música y la electrónica un lugar en el que estar.
 \end{flushright}\vfill\vfill
 
 \newpage
@@ -174,6 +210,9 @@ A mis padres.
 \chapter{Listados adicionales}
 
 Ejemplo.
+
+\input{capitulos/anexo_presupuesto}
+\input{capitulos/anexo_ods}
 \end{document}
 
 %\fbox{}

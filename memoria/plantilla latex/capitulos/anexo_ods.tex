@@ -1,0 +1,79 @@
+\chapter{Relación con los Objetivos de Desarrollo Sostenible}
+\label{anx:ods}
+
+Grado de relación del trabajo con los Objetivos de Desarrollo Sostenible de la
+Agenda 2030.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Grado de relación del trabajo con los Objetivos de Desarrollo
+             Sostenible.}
+    \label{tab:ods}
+    \begin{tabular}{lcccc}
+        \toprule
+        \textbf{Objetivos de Desarrollo Sostenibles} &
+        \textbf{Alto} & \textbf{Medio} & \textbf{Bajo} &
+        \textbf{No procede} \\
+        \midrule
+        ODS 1. Fin de la pobreza.                          &   &   &   & X \\
+        ODS 2. Hambre cero.                                &   &   &   & X \\
+        ODS 3. Salud y bienestar.                          &   &   &   & X \\
+        ODS 4. Educación de calidad.                       &   & X &   &   \\
+        ODS 5. Igualdad de género.                         &   &   &   & X \\
+        ODS 6. Agua limpia y saneamiento.                  &   &   &   & X \\
+        ODS 7. Energía asequible y no contaminante.        &   &   &   & X \\
+        ODS 8. Trabajo decente y crecimiento económico.    &   &   &   & X \\
+        ODS 9. Industria, innovación e infraestructuras.   & X &   &   &   \\
+        ODS 10. Reducción de las desigualdades.            &   &   &   & X \\
+        ODS 11. Ciudades y comunidades sostenibles.        &   &   &   & X \\
+        ODS 12. Producción y consumo responsables.         &   & X &   &   \\
+        ODS 13. Acción por el clima.                       &   &   &   & X \\
+        ODS 14. Vida submarina.                            &   &   &   & X \\
+        ODS 15. Vida de ecosistemas terrestres.            &   &   &   & X \\
+        ODS 16. Paz, justicia e instituciones sólidas.     &   &   &   & X \\
+        ODS 17. Alianzas para lograr objetivos.            &   &   &   & X \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\section*{Descripción de la alineación del trabajo con los ODS con un grado de
+relación más alto}
+
+\textbf{ODS 9. Industria, innovación e infraestructuras.} Es el objetivo con el
+que este trabajo se relaciona de forma directa, y en concreto con su meta de
+apoyar la investigación científica y mejorar la capacidad tecnológica. El
+trabajo no aplica una técnica ya resuelta, sino que lleva un modelo generativo
+entrenado en un ordenador hasta un instrumento embebido que funciona en tiempo
+real y sin ordenador conectado, sobre placas de desarrollo de bajo coste. La
+aportación no está en la interpolación neuronal de tablas de onda, que ya
+existía en la literatura, sino en resolver los problemas que aparecen al
+llevarla a un aparato: repartir el trabajo entre tres procesadores según la
+escala de tiempo de cada tarea, precalcular en el ordenador lo que no cabe
+ejecutar a bordo y garantizar que la información llegue íntegra entre placas.
+Ese tipo de trabajo —adaptar una técnica de investigación a hardware asequible—
+es justamente lo que el objetivo entiende por mejorar la capacidad tecnológica,
+porque baja la barrera de entrada de una técnica que hasta ahora exigía un
+ordenador dedicado.
+
+\textbf{ODS 4. Educación de calidad.} El desarrollo completo está publicado en
+un repositorio de acceso libre, y no sólo el resultado. Incluye los guiones de
+preprocesado del conjunto de datos, el entrenamiento del modelo, el horneado de
+la rejilla y las validaciones numéricas, además del firmware de las tres placas
+y los ficheros paramétricos de la carcasa. Eso permite reproducir el trabajo
+entero o reutilizar cualquiera de sus partes por separado. A ello se suma que la
+memoria documenta también los caminos que no funcionaron y por qué, que suele
+ser la información que más cuesta encontrar y la más útil para quien intente algo
+parecido.
+
+\textbf{ODS 12. Producción y consumo responsables.} Varias decisiones de diseño
+del capítulo~\ref{cap:hardware} apuntan en esta dirección, y ninguna se tomó
+pensando en la sostenibilidad, sino por razones prácticas que resultan coincidir
+con ella. Las dos placas de desarrollo caras van sobre zócalos y no soldadas,
+así que se recuperan intactas si la placa que las sostiene falla o si el
+proyecto se desmonta. Todas las uniones de la carcasa aprietan contra una tuerca
+metálica embutida en lugar de roscar en el plástico, precisamente porque el
+plástico aguanta pocos montajes y la pieza dejaría de ser desmontable. El
+instrumento se construye además con componentes de catálogo, sin ningún circuito
+integrado a medida, de modo que cualquier pieza averiada se sustituye por otra
+equivalente. Y el diseño de la carcasa es paramétrico y está publicado, así que
+una pieza rota se vuelve a fabricar sin rehacer el modelo.

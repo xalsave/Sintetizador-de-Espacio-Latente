@@ -104,9 +104,9 @@ como referencia la fase de un armónico despreciable introduciría un giro
 aleatorio. El script detecta esa situación comparando la magnitud del
 fundamental con la del armónico más fuerte. Si la relación cae por debajo de
 $10^{-3}$, es decir, no tiene una fundamental claramente diferenciada, deja la onda sin rotar
-en lugar de descartarla. Afecta a 100 ondas, un 2,3\,\% del total. Corresponde a ondas de ruido, ondas
-de material estéreo y de instrumentos frotados, exactamente el 
-material del que cabía esperarlo. Mantenerlo en el conjunto aporta variedad tímbrica
+en lugar de descartarla. Afecta a 100 ondas, un 2,3\,\% del total. Corresponde sobre todo a las 
+ondas con armónico fundamental débil o ausente (la carpeta overtone y varias de las numeradas), 
+más algunas de material estéreo. Mantenerlo en el conjunto aporta variedad tímbrica
 en los bordes del espacio sin comprometer la alineación del resto.
 
 El resultado es una matriz de $4358 \times 1024$ valores en coma flotante, que
@@ -275,6 +275,7 @@ la carpeta de origen sea recuperable.
 
 \section{Fidelidad de la reconstrucción}
 \label{sec:reconstruccion}
+\hypertarget{RE2.2}{}\label{RE2.2}
 
 Las cifras de pérdida dicen cuánto se equivoca el modelo de media, pero no en
 qué se equivoca. La Figura~\ref{fig:reconstrucciones} compara cuatro ondas del
@@ -336,14 +337,17 @@ que recortan la zona efectivamente poblada y dejan fuera los pocos puntos
 extremos. Los valores resultantes son $[-2{,}239,\ 3{,}054]$ en el eje X y
 $[-3{,}010,\ 2{,}429]$ en el eje Y. Son los que dibuja el rectángulo de la
 Figura~\ref{fig:latente}. El precio es perder los timbres más raros, que
-quedaban justamente en los bordes, pero ganamos que cualquier punto que toque
+quedaban justamente en los bordes. A cambio, cualquier punto que toque
 el usuario cae en puntos con ondas cercanas.
 
-La segunda es que la decodificación tiene que ser determinista. Un autoencoder
-variacional muestrea la distribución latente durante el entrenamiento, pero en
-modo de evaluación la reparametrización devuelve directamente la media, de modo
-que un mismo nodo produce siempre la misma onda. Sin eso, la rejilla dependería
-de la semilla y dejaría de ser reproducible.
+La segunda es que la decodificación es determinista. El decodificador es una
+función fija de la coordenada, así que un mismo nodo produce siempre la misma
+onda; el muestreo aleatorio del autoencoder variacional solo interviene al
+codificar durante el entrenamiento. Lo que sí exige el modo de evaluación es el
+cálculo de los límites del párrafo anterior, que codifica el conjunto entero y
+toma la media de cada distribución en lugar de una muestra. Sin eso, los
+percentiles, y con ellos la rejilla, dependerían de la semilla y dejarían de ser
+reproducibles.
 
 La tercera es el formato de salida. El decodificador entrega valores en
 $[-1, 1]$ y la cabecera los guarda como enteros de 16 bits con signo en formato

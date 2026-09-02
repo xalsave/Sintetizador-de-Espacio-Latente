@@ -1,0 +1,58 @@
+\chapter{Presupuesto de materiales}
+\label{anx:presupuesto}
+
+La Tabla~\ref{tab:presupuesto} recoge el coste de los componentes del
+instrumento descrito en el capítulo~\ref{cap:hardware}. Las cantidades son las
+que hay montadas en el aparato terminado, no las compradas, que en algunos casos
+son mayores porque se adquirieron unidades de repuesto.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Presupuesto de materiales del instrumento.}
+    \label{tab:presupuesto}
+    \begin{tabular}{llrrr}
+        \toprule
+        \textbf{Referencia} & \textbf{Componente} & \textbf{Cant.} &
+        \textbf{€/ud} & \textbf{Importe} \\
+        \midrule
+        Daisy Seed 1.2      & Placa de desarrollo de audio        & 1 & 53,25 & 53,25 \\
+        ESP32-2432S028      & Placa ESP32 con pantalla táctil     & 1 & 12,51 & 12,51 \\
+        ESP32-S3-N16R8      & Placa de desarrollo ESP32-S3        & 1 &  4,74 &  4,74 \\
+        MIDI Shield         & Shield MIDI para Arduino            & 1 &  4,73 &  4,73 \\
+        Veroboard           & Placa de tiras 100$\times$160~mm    & 1 &  3,36 &  3,36 \\
+        POT10k-BLin         & Potenciómetro lineal 10~k$\Omega$   & 6 &  0,29 &  1,71 \\
+        OLED 0,96in         & Pantalla OLED de 0,96 pulgadas      & 1 &  1,31 &  1,31 \\
+        Switch ON-OFF-ON    & Conmutador de palanca               & 2 &  0,27 &  0,54 \\
+        Jack 3,5~mm         & Jack de audio hembra mono           & 1 &  0,33 &  0,33 \\
+        Tira 22 pines       & Tira de pines hembra de 2,54~mm     & 2 &  0,15 &  0,30 \\
+        Tira 20 pines       & Tira de pines hembra de 2,54~mm     & 2 &  0,15 &  0,30 \\
+        R3,3                & Resistencia fusible 3,3~$\Omega$ 1~W & 1 & 0,28 &  0,28 \\
+        C470u-ELEC          & Condensador electrolítico 470~µF    & 1 &  0,24 &  0,24 \\
+        9V Socket           & Conector de alimentación de 2,1~mm  & 1 &  0,16 &  0,16 \\
+        C100n-CER           & Condensador cerámico 100~nF         & 8 &  0,005 & 0,04 \\
+        1N5817              & Diodo Schottky                      & 1 &  0,013 & 0,01 \\
+        R10k                & Resistencia de 10~k$\Omega$ 1/4~W   & 2 &  0,004 & 0,01 \\
+        \midrule
+        \multicolumn{4}{l}{\textbf{Coste de materiales}} & \textbf{83,82} \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+Tres precisiones sobre cómo está construida la tabla. La primera es que los
+importes no incluyen mermas, es decir, el material desechado durante el montaje;
+por eso la pantalla OLED figura con una unidad y no con las dos que se
+compraron, ya que la primera se rompió al montarla. La segunda es que se han
+omitido los componentes cuyo importe, una vez descontada la merma, redondea a
+cero céntimos. La tercera es que el presupuesto recoge los componentes
+electrónicos y la placa que los soporta, y quedan fuera el alimentador externo
+de 230~V a 5~V, el filamento con el que se imprimieron las tres piezas de la
+carcasa, el cable del mazo de panel y la tornillería, de modo que el coste real
+del conjunto es algo mayor que el que aquí figura.
+
+Conviene señalar que dos de las diecisiete líneas concentran el 78\,\% del
+importe, y son las dos placas de desarrollo con procesador de audio y pantalla
+táctil. Todo lo demás —los seis potenciómetros, las dos pantallas, los
+conectores, la placa de tiras y la electrónica pasiva completa— suma menos de
+veinte euros. Es un resultado coherente con el condicionante de partida del
+apartado~\ref{sec:requisitos}, que exigía construir el instrumento sobre
+hardware comercial de bajo coste sin fabricar ningún circuito a medida.

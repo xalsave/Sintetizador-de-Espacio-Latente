@@ -1,12 +1,29 @@
 \chapter{Introducción}
 
+\noindent\begin{minipage}[c]{0.76\textwidth}
+Todo el material de este trabajo está publicado en un repositorio de acceso
+libre. Incluye los guiones de preparación del conjunto de datos y de
+entrenamiento del modelo, el firmware de las tres placas, los ficheros
+paramétricos de la carcasa y las fuentes de este documento.
+
+\smallskip
+\noindent\url{https://github.com/xalsave/Sintetizador-de-Espacio-Latente}
+\end{minipage}\hfill
+\begin{minipage}[c]{0.20\textwidth}
+\centering
+\qrcode[height=2.4cm]{https://github.com/xalsave/Sintetizador-de-Espacio-Latente}
+\end{minipage}
+
+\bigskip
+
 \section{Contexto y planteamiento del problema}
+\hypertarget{RE1.1}{}\label{RE1.1}
 
 La síntesis wavetable es una de las técnicas más extendidas en los instrumentos
 musicales electrónicos actuales. Su principio es sencillo, en lugar de calcular
 la forma de onda muestra a muestra mediante una expresión matemática, se
 almacena un ciclo completo de la onda en una tabla y se recorre esa tabla a la
-velocidad a la que se quiere reproducir la nota . El coste
+velocidad a la que se quiere reproducir la nota. El coste
 computacional es bajo y el control sobre el timbre es directo, ya que basta con
 sustituir el contenido de la tabla para obtener un sonido distinto.
 
@@ -49,9 +66,9 @@ escritorio o como complementos para estaciones de trabajo de audio digital. El
 sonido se genera en un ordenador.
 
 La oportunidad que aborda este trabajo es distinta. Se trata de llevar ese mismo
-concepto a un instrumento físico autónomo a microcontroladores
+concepto a un instrumento físico autónomo basado en microcontroladores
 de bajo coste que generen el audio en su propio hardware y respondan a un gesto
-táctil y a un teclado MIDI sin necesidad de un ordenador conectado. La
+táctil y a un teclado \gls{midi} sin necesidad de un ordenador conectado. La
 aportación no está, por tanto, en la interpolación neuronal en sí, sino en su
 integración embebida completa en tiempo real. En resolver el reparto de tareas
 entre procesadores, la comunicación entre ellos, la latencia, la estabilidad del
@@ -71,15 +88,16 @@ el sistema completo.
 Desde el punto de vista académico, el trabajo integra contenidos de
 procesamiento digital de señal, aprendizaje automático, sistemas embebidos,
 protocolos de comunicación entre dispositivos y diseño electrónico. Es una gran
-oportunidad para poder aplicar muy transversalmente todos los conocimientos
+oportunidad para aplicar transversalmente todos los conocimientos y competencias
 adquiridos en el grado.
 
 \section{Objetivos}
+\hypertarget{RE1.3}{}\label{RE1.3}
 
 El objetivo general es diseñar, construir y validar un sintetizador digital
 embebido y autónomo que permita explorar de forma continua un espacio tímbrico
 aprendido por un autoencoder, empleando una pantalla táctil como superficie de
-control y una entrada MIDI estándar para la ejecución musical.
+control y una entrada \gls{midi} estándar para la ejecución musical.
 
 De este objetivo general se derivan los siguientes objetivos específicos:
 
@@ -99,7 +117,7 @@ De este objetivo general se derivan los siguientes objetivos específicos:
     \item Resolver la comunicación entre los tres microcontroladores que
           componen el sistema, definiendo los protocolos y verificando que la
           información llega íntegra.
-    \item Incorporar el control de nota y dinámica mediante MIDI, así como un
+    \item Incorporar el control de nota y dinámica mediante \gls{midi}, así como un
           panel de control analógico para los parámetros de envolvente y filtro.
     \item Validar cada etapa de forma objetiva, contrastando el comportamiento
           del sistema embebido con una implementación de referencia en el
@@ -109,12 +127,13 @@ De este objetivo general se derivan los siguientes objetivos específicos:
 \end{itemize}
 
 \section{Alcance y condicionantes}
+\hypertarget{RE1.2}{}\label{RE1.2}
 
 El sistema se construye sobre tres microcontroladores con funciones separadas.
 Una pantalla táctil con controlador ESP32 integrado se encarga de la interfaz de
 usuario. Un ESP32-S3 aloja la rejilla de formas de onda y calcula la
 interpolación. Una placa Daisy Seed, basada en un procesador ARM Cortex-M7,
-genera el audio gracias a su DAC de 24 bits. El teclado que proporciona las notas se conecta por MIDI DIN y
+genera el audio gracias a su \gls{dac} de 24 bits. El teclado que proporciona las notas se conecta por MIDI DIN y
 se considera un elemento externo e intercambiable, de forma que el entregable
 del trabajo es un módulo de sonido y no un instrumento con teclado integrado.
 
@@ -133,7 +152,7 @@ explícitos:
           impuesta por el control táctil, pero supone un cuello de botella
           considerable para representar varios miles de formas de onda
           distintas. Su efecto sobre la fidelidad de la reconstrucción se mide y
-          se discute en el capítulo de resultados.
+          se discute en el capítulo sobre el modelo neuronal.
     \item \textbf{El instrumento es monofónico.} La polifonía no forma parte de
           los objetivos y se plantea únicamente como línea de trabajo futuro.
     \item \textbf{El hardware es de bajo coste y de disponibilidad comercial.}
@@ -153,8 +172,8 @@ El \textbf{capítulo 1} sitúa el problema, expone la motivación del trabajo, f
 los objetivos y delimita el alcance.
 
 El \textbf{capítulo 2} recoge los fundamentos teóricos necesarios para seguir el
-resto del documento y revisa los trabajos previos relacionados, tanto los
-sistemas de síntesis neuronal publicados.
+resto del documento y revisa los trabajos previos relacionados con
+sistemas de síntesis neuronal.
 
 El \textbf{capítulo 3} describe el diseño del sistema completo: el reparto de
 funciones entre los tres microcontroladores, los protocolos de comunicación

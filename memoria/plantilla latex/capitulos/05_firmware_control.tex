@@ -27,7 +27,7 @@ del conversor. De ahí sale todo lo que viene después, calibrar consiste
 precisamente en averiguar qué cuenta corresponde a cada borde.
 
 La pantalla y el táctil son dos chips distintos y cada uno se comunica con el ESP32 por 
-su propio bus \gls{spi}. La placa dispone de dos, llamados VSPI y HSPI, y aquí se 
+su propio bus \gls{spi}. La placa dispone de dos utilizables, llamados VSPI y HSPI, y aquí se 
 usa uno para cada cosa. El táctil se queda en el VSPI, que es donde lo dejó cableado 
 el fabricante, y la pantalla se lleva el HSPI. El reparto no es opcional porque la 
 librería de la pantalla, \texttt{TFT\_eSPI} \cite{TFTeSPI}, toma el VSPI por omisión 
@@ -128,8 +128,8 @@ apartado~\ref{sec:enlaces} la decodifica una máquina de estados que busca el by
 de cabecera, lee los cuatro de datos y valida la suma de comprobación. Ante
 cualquier fallo vuelve al estado inicial a buscar cabecera, de forma que un byte
 perdido descuadra una trama pero no el flujo. Conviene señalar que esa entrada
-también se puede hacer por \gls{usb}. Aquí la que la coordenada se escribe a mano como
-texto en el Serial Port. Fue lo que permitió construir y
+también se puede hacer por \gls{usb}. Aquí la coordenada se escribe a mano como
+texto mediante el puerto serie. Fue lo que permitió construir y
 validar la interpolación antes de que existiera el firmware de la \gls{cyd}, y
 es también lo que hace posibles las medidas del capítulo~\ref{cap:pruebas}, que
 necesitan una coordenada conocida y estable.
@@ -180,7 +180,7 @@ y solo se redondea al pasar el resultado a Q15, una vez por muestra. El ESP32-S3
 tiene unidad de coma flotante en hardware, así que las más de mil operaciones que
 esto cuesta son despreciables frente a los 1,6~ms que después ocupa la
 transferencia. Cabe recordar que el cálculo se ejecuta a frecuencia de control, unas decenas de
-veces por segundo como mucho así que no es tan dramático. La ventaja de hacerlo así es que cada muestra sufre
+veces por segundo como mucho, así que ese coste es irrelevante. La ventaja de hacerlo así es que cada muestra sufre
 un único redondeo en lugar de acumular el de cada paso intermedio. Tampoco hace
 falta saturar el resultado porque los cuatro pesos suman uno y están todos entre
 cero y uno. De este modo, la mezcla es una combinación convexa de cuatro valores
@@ -190,8 +190,8 @@ La rejilla se compila como una constante de $16\times16\times1024$ enteros de 16
 bits, es decir los 512~kB del apartado~\ref{sec:parametros}, y vive en memoria de
 programa. En el ESP32-S3 la caché mapea esa memoria al espacio de direcciones, de
 modo que se lee como cualquier otro array, sin las macros de acceso que exigen
-otras arquitecturas. En memoria de datos solo queda la tabla de trabajo, dos
-kilobytes. La \gls{psram} de 8~MB de la placa no llega a intervenir en el camino
+otras arquitecturas. En memoria de datos quedan la tabla de trabajo y los dos búferes 
+de trama, unos cuatro kilobytes. La \gls{psram} de 8~MB de la placa no llega a intervenir en el camino
 principal y queda como margen para la ampliación planteada en el
 apartado~\ref{sec:alternativas}.
 
