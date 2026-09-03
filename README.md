@@ -34,7 +34,7 @@ sintetizada por el decoder del modelo aprendido.
                                             │
                                             ▼
                                     Síntesis wavetable
-                                    + envolvente + MIDI
+                                    + filtro + ADSR + MIDI
                                             │
                                             ▼
                                        Audio out
@@ -51,21 +51,29 @@ sintéticos, ruidos, etc.) sin saltos perceptibles.
 Tres microcontroladores con roles especializados, comunicados por buses
 serie estándar:
 
-| Subsistema       | Hardware                    | Función                                     |
-|------------------|-----------------------------|---------------------------------------------|
-| Interfaz táctil  | CYD (ESP32-2432S028R)       | Pantalla TFT 2.8" + táctil resistivo        |
-| Cerebro          | ESP32-S3 N16R8 (8 MB PSRAM) | Mapeo coordenada → wavetable, decoder       |
-| Motor de audio   | Daisy Seed (STM32H750)      | Síntesis, MIDI, salida analógica            |
-| Control MIDI     | Arturia Keystep MK2         | Teclado controlador                         |
+| Subsistema       | Hardware                    | Función                                       |
+|------------------|-----------------------------|-----------------------------------------------|
+| Interfaz táctil  | CYD (ESP32-2432S028R)       | Pantalla TFT 2.8" + táctil resistivo XPT2046  |
+| Cerebro          | ESP32-S3 N16R8              | Grid 16×16 en flash, interpolación bilineal   |
+| Motor de audio   | Daisy Seed (STM32H750)      | Síntesis, filtro, envolvente, MIDI, audio out |
+| Control MIDI     | Arturia Keystep MK2         | Teclado controlador por DIN                   |
+| Panel analógico  | 6 potenciómetros + selector | ADSR, corte, resonancia y tipo de filtro      |
+| Display          | OLED SSD1306 128×64         | Parámetro en edición y curva correspondiente  |
 
 **Flujo de datos:**
 
 ```
-[CYD]──UART(115200)──►[ESP32-S3]──SPI(10MHz)──►[Daisy Seed]──audio──► jack 3.5
-                                                     ▲
-                                                     │ MIDI
-                                                [Keystep MK2]
+[CYD]──UART(460800)──►[ESP32-S3]──SPI(10 MHz)──►[Daisy Seed]──audio──► jack 3.5
+   ▲                                                  ▲
+   └────── onda diezmada, para dibujarla ─────┘       │ MIDI DIN (6N138 → USART1)
+                                                 [Keystep MK2]
 ```
+
+El enlace con la CYD es full-duplex: la coordenada táctil sube al ESP32-S3 en
+una trama de 6 bytes, y el ESP32-S3 devuelve la onda resultante diezmada a 256
+puntos de 8 bits para que la pantalla la dibuje. Esa onda de vuelta es dato de
+representación, no de audio: la wavetable real de 1024 muestras solo viaja por
+el SPI hacia el Daisy, en tramas de 2054 bytes protegidas con CRC16-CCITT.
 
 ---
 
@@ -73,48 +81,44 @@ serie estándar:
 
 ### Fase offline (preparación, en PC)
 
-1. **Preprocesado del dataset.** Se cargan ~4000 wavetables del corpus AKWF
-   (Adventure Kid Waveforms), se remuestrean a 1024 muestras, se eliminan
-   componentes DC, se alinean en fase mediante FFT y se normalizan.
-2. **Entrenamiento del VAE.** Se entrena en PyTorch un autoencoder variacional
-   con espacio latente bidimensional. El encoder mapea las ondas al plano
-   latente; el decoder reconstruye una onda a partir de cualquier coordenada.
-3. **Horneado del grid.** Se muestrea el plano latente en una rejilla regular
-   (16×16 = 256 puntos), se decodifica una wavetable en cada nodo, y se
-   exporta el banco como header de C para el firmware.
+1. **Preprocesado del dataset.** Se cargan las ~4000 wavetables del corpus AKWF
+   (Adventure Kid Waveforms), se remuestrean de 600 a 1024 muestras por FFT, se
+   elimina la componente continua, se alinea el armónico fundamental a fase 0 y
+   se normaliza por pico.
+2. **Entrenamiento del VAE.** Autoencoder variacional totalmente conectado en
+   PyTorch, con encoder 1024 → 512 → 128 → latente 2D y decoder espejo. La
+   pérdida combina error cuadrático de reconstrucción y divergencia KL con un
+   peso pequeño y rampa de calentamiento.
+3. **Horneado del grid.** Se acota la zona poblada del latente por percentiles,
+   se muestrea una rejilla regular de 16×16 = 256 puntos, se decodifica una
+   wavetable en cada nodo y se exporta el banco como header de C en formato Q15,
+   unos 512 KB en la flash del ESP32-S3.
+
+La red **no se ejecuta en el instrumento**. Toda la inferencia ocurre en esta
+fase, de modo que en vivo no hay latencia de modelo.
 
 ### Fase en vivo (en el instrumento)
 
-1. La CYD lee el punto tocado en la pantalla y envía la coordenada (x, y)
-   por UART al ESP32-S3.
-2. El ESP32-S3 localiza la celda del grid correspondiente e **interpola
-   bilinealmente** entre las cuatro wavetables vecinas, produciendo una
-   wavetable suave para cualquier coordenada continua.
-3. La wavetable resultante se envía por SPI al Daisy Seed.
-4. El Daisy mantiene un **doble buffer** y aplica un **crossfade corto**
-   al recibir una tabla nueva, eliminando clicks de cambio.
-5. Un acumulador de fase con interpolación lineal entre muestras reproduce
-   la tabla a la frecuencia indicada por el MIDI entrante del Keystep,
-   modulada por una envolvente ADSR. La salida sale por el códec del Daisy
-   a un jack 3.5mm.
+1. La CYD lee el punto tocado, lo normaliza al rango completo de 16 bits y envía
+   la coordenada por UART al ESP32-S3.
+2. El ESP32-S3 localiza la celda del grid e **interpola bilinealmente** entre
+   las cuatro wavetables vecinas, produciendo una onda suave para cualquier
+   coordenada continua.
+3. La wavetable resultante viaja por SPI al Daisy Seed.
+4. El Daisy mantiene un **doble buffer** y aplica un **crossfade de 20 ms** al
+   recibir una tabla nueva, lo que elimina los clicks de cambio.
+5. Un acumulador de fase con interpolación lineal entre muestras reproduce la
+   tabla a la frecuencia que indica el MIDI entrante del Keystep. La señal pasa
+   por un filtro variable de estado y una envolvente ADSR, y sale por el códec
+   del Daisy a un jack de 3.5 mm.
 
-### Ampliación (opcional, según tiempo)
+### Panel de control
 
-Como extensión, se contempla embarcar el propio decoder neuronal cuantizado
-a int8 en el ESP32-S3 mediante **TensorFlow Lite Micro**, sustituyendo la
-interpolación bilineal sobre grid por inferencia neuronal directa para
-cualquier punto del plano latente.
-
----
-
-## Stack tecnológico
-
-- **Machine Learning:** Python 3.10+, PyTorch, NumPy, SciPy, Matplotlib
-- **Firmware Daisy:** C++ con libDaisy + DaisySP, ARM GCC, flasheo DFU
-- **Firmware ESP32-S3 y CYD:** C++ con ESP-IDF o PlatformIO,
-  TensorFlow Lite Micro (stretch goal)
-- **Comunicación:** UART 8N1 a 115200 baud (CYD↔S3), SPI 10 MHz modo 0 (S3↔Daisy)
-- **Audio:** códec interno del Daisy (24-bit, 48 kHz), señal mono replicada estéreo
+El Daisy lee siete canales analógicos: los cuatro tiempos y niveles del ADSR,
+la frecuencia de corte, la resonancia y un selector de tres posiciones que
+escoge entre filtro paso bajo, paso banda y paso alto. El OLED muestra el
+último mando movido con su valor en unidades reales y la curva correspondiente,
+la envolvente o la respuesta del filtro.
 
 ---
 
@@ -122,32 +126,92 @@ cualquier punto del plano latente.
 
 ```
 Sintetizador-de-Espacio-Latente/
-├── ml/                       # Entorno Python: dataset, entrenamiento, exportación
-│   ├── dataset/              # AKWF original + dataset procesado .npy
-│   ├── scripts/              # 1_…, 2_…, 3_… numerados por orden de ejecución
-│   └── exports/              # Modelos .tflite y headers .h para el firmware
-│       └── vae.pt            # Pesos del VAE (NO incluido en el repo: pesa
-│                              # mucho; se regenera con ml/scripts/3_train_vae.py)
-├── firmware/                 # Código embebido
-│   ├── esp32_control/        # Firmware del ESP32-S3
-│   └── daisy_dsp/            # Firmware del Daisy Seed
+├── ml/
+│   ├── dataset/              # Corpus AKWF (.wav) y dataset procesado (.npy)
+│   ├── scripts/              # Pipeline numerado por orden de ejecución
+│   └── exports/              # vae.pt, grid.npy, grid.h y figuras del modelo
+├── firmware/
+│   ├── cyd_ui/               # PlatformIO — pantalla táctil (ESP32-WROOM)
+│   ├── esp32_control/        # PlatformIO — grid e interpolación (ESP32-S3)
+│   └── daisy_dsp/            # libDaisy — síntesis, MIDI y panel (STM32H750)
 ├── hardware/
-│   ├── cad/                  # Modelos 3D de la carcasa
-│   └── schematics/           # Esquemas de cableado y alimentación
-├── docs/               # Documentación técnica por subsistema
-├── DISENO.md                 # Mapa maestro del proyecto
-├── PROJECT.md                # Estado vivo, decisiones tomadas, planificación
-└── README.md                 # Este archivo
+│   ├── cad/                  # Carcasa y panel en OpenSCAD
+│   └── schematics/           # Cableado y veroboard en Fritzing
+├── memoria/
+│   ├── plantilla latex/      # Fuentes LaTeX del documento y capítulos
+│   ├── figuras/              # Guiones de Python que generan las figuras
+│   └── resumen_sesiones/     # Cuaderno de laboratorio, sesión a sesión
+├── docs/               # Notas técnicas por subsistema
+├── LICENSE
+└── README.md
 ```
+
+El firmware del Daisy se compila desde el árbol de DaisyExamples; la copia de
+`firmware/daisy_dsp/` es la fuente de referencia versionada.
+
+---
+
+## Reproducir el pipeline
+
+Los scripts de `ml/scripts/` están numerados por orden de ejecución y se lanzan
+desde la raíz del repositorio:
+
+```bash
+python ml/scripts/2_build_dataset.py    # AKWF -> akwf_processed.npy
+```
+
+```bash
+python ml/scripts/3_train_vae.py        # entrena el VAE -> vae.pt
+```
+
+```bash
+python ml/scripts/4_bake_grid.py        # decodifica el grid -> grid.npy y grid.h
+```
+
+```bash
+python ml/scripts/5_demo_morph.py       # demo del morphing con ratón, en PC
+```
+
+Requiere Python 3.10 o superior con PyTorch, NumPy, SciPy, Matplotlib y
+`sounddevice` para la demo. El entrenamiento aprovecha CUDA si está disponible.
+
+### Validación cruzada
+
+Cada enlace de la cadena se comprueba contra una referencia calculada en NumPy,
+en lugar de fiarlo al oído:
+
+- `6_validate_s3.py` recalcula en el PC la wavetable que el ESP32-S3 volcó por
+  serie y las compara muestra a muestra.
+- `7_validate_spi.py` comprueba que lo que reproduce el Daisy es exactamente lo
+  que el ESP32-S3 envió por SPI.
+- `8_validate_midi.py` contrasta la tabla de conversión de nota MIDI a
+  frecuencia y a incremento de fase del firmware con la fórmula teórica.
+- `8b_monitor_midi.py` muestra en vivo los eventos que procesa el Daisy.
+
+---
+
+## Stack tecnológico
+
+- **Machine learning:** Python 3.10+, PyTorch, NumPy, SciPy, Matplotlib
+- **Firmware Daisy:** C++ con libDaisy y DaisySP, ARM GCC, flasheo por DFU
+- **Firmware ESP32-S3 y CYD:** C++ sobre Arduino con PlatformIO
+- **Comunicación:** UART 8N1 a 460800 baud entre CYD y ESP32-S3; SPI a 10 MHz
+  en modo 0 entre ESP32-S3 y Daisy; MIDI DIN por USART1 con optoacoplador 6N138
+- **Audio:** códec del Daisy a 48 kHz, señal mono replicada en ambos canales
+- **Hardware:** veroboard, carcasa impresa en 3D modelada en OpenSCAD
 
 ---
 
 ## Estado del proyecto
 
-🚧 **En desarrollo activo.** Inicio: junio 2026. Entrega prevista: agosto 2026.
+**Completado.** El instrumento está montado, flasheado y verificado como
+unidad, con los tres microcontroladores, el panel analógico, el display y la
+carcasa definitiva. El documento del TFG se encuentra en `memoria/`.
 
-Ver `PROJECT.md` para el plan detallado de las 11 sesiones de trabajo y el
-estado actual de cada subsistema.
+El decoder neuronal embarcado en el ESP32-S3 mediante TensorFlow Lite Micro se
+estudió como ampliación y queda documentado como línea de trabajo futuro: la
+versión final resuelve el timbre por interpolación bilineal sobre el grid
+precalculado, que era el camino crítico del proyecto.
 
 ---
 
@@ -165,7 +229,7 @@ El proyecto se apoya en literatura previa de síntesis neuronal de audio:
   latent space.*
 
 La aportación diferencial de este TFG no reside en la técnica de interpolación
-neuronal (ya explorada en plugins de DAW) sino en su **integración embebida
+neuronal, ya explorada en plugins de DAW, sino en su **integración embebida
 completa en tiempo real**, sobre hardware de bajo coste y con interfaz física
 táctil y MIDI, llevando la idea de plugin de software a instrumento físico
 autónomo.
@@ -174,7 +238,7 @@ autónomo.
 
 ## Autor
 
-**Alejandro Saez Vega** | 
+**Alejandro Saez Vega**
 Grado en Ingeniería de Sistemas de Telecomunicación
 Universitat Politècnica de València
 
@@ -187,5 +251,5 @@ Tutor del TFG: Jose Javier López Monfort
 Código fuente bajo licencia MIT. Ver `LICENSE`.
 
 El dataset AKWF (Adventure Kid Waveforms) se distribuye bajo Creative Commons
-Zero (CC0) y no está incluido en este repositorio; se descarga aparte desde
-[la web del autor](https://www.adventurekid.se/).
+Zero (CC0) y se incluye en `ml/dataset/` para que el pipeline sea reproducible
+tal cual. Su origen es [la web del autor](https://www.adventurekid.se/).
