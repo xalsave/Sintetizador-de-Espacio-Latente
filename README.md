@@ -141,7 +141,6 @@ Sintetizador-de-Espacio-Latente/
 │   ├── plantilla latex/      # Fuentes LaTeX del documento y capítulos
 │   ├── figuras/              # Guiones de Python que generan las figuras
 │   └── resumen_sesiones/     # Cuaderno de laboratorio, sesión a sesión
-├── docs/               # Notas técnicas por subsistema
 ├── LICENSE
 └── README.md
 ```
