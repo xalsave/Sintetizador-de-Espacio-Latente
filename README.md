@@ -139,8 +139,7 @@ Sintetizador-de-Espacio-Latente/
 │   └── schematics/           # Cableado y veroboard en Fritzing
 ├── memoria/
 │   ├── plantilla latex/      # Fuentes LaTeX del documento y capítulos
-│   ├── figuras/              # Guiones de Python que generan las figuras
-│   └── resumen_sesiones/     # Cuaderno de laboratorio, sesión a sesión
+│   └── figuras/              # Guiones de Python que generan las figuras
 ├── LICENSE
 └── README.md
 ```
