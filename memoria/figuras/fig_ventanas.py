@@ -22,7 +22,7 @@ VISIBLE = (450, 3730, 450, 3730)
 CAPTURA = (600, 3580, 600, 3580)
 FANTASMA = (3714, 643)
 
-fig, ax = plt.subplots(figsize=(4.0, 3.9))
+fig, ax = plt.subplots(figsize=(6.2, 3.4))
 
 
 def rect(lim, color, ancho, estilo="-", relleno=None, z=2, etiqueta=None):
@@ -47,7 +47,7 @@ ax.annotate("pulsación fantasma\ncrudo (3714, 643)",
             arrowprops=dict(arrowstyle="->", color=NARANJA, linewidth=0.9,
                             shrinkA=2, shrinkB=5))
 
-ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.16), ncol=1,
+ax.legend(loc="center left", bbox_to_anchor=(1.02, 0.5), ncol=1,
           fontsize=8, handlelength=2.2, borderaxespad=0.0)
 
 ax.set_xlim(0, 4095)
