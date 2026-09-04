@@ -320,16 +320,13 @@ pero que apartarse de ese segmento genera ruido. Dicho de otro modo, en su
 modelo no todo el espacio latente es válido, solo lo son las trayectorias entre
 puntos conocidos. Para un instrumento en el que el usuario recorre libremente un
 plano con el dedo esa limitación es un problema. Esta es una de las razones que justifican
-emplear en este proyecto un autoencoder variacional en lugar de uno convencional. Los
-propios autores apuntan en esa dirección al plantear como trabajo futuro un
-modelo ligero basado precisamente en un autoencoder variacional.
+emplear en este proyecto un autoencoder variacional en lugar de uno convencional.
 
 Kreković \cite{Krekovic2021} plantea un oscilador basado en un autoencoder y
 estudia el efecto del conjunto de entrenamiento y de los hiperparámetros sobre
 la variedad de las formas de onda generadas. Su conclusión fue que emplear las 
 variables latentes directamente como parámetros de entrada produce una transición 
 suave entre las ondas generadas cuando los cambios de esos parámetros son pequeños.
-Es exactamente la propiedad sobre la que descansa el control táctil de este instrumento.
 
 Más recientemente, Wavespace \cite{Lee2024} propone un generador de tablas
 basado en un autoencoder variacional cuyo espacio latente se divide en subespacios 
