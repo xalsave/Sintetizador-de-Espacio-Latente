@@ -11,8 +11,8 @@
 //
 // MIDI: Keystep -> DIN -> Shield 6N138 -> USART1 (D13 Tx / D14 Rx).
 //
-// Los pines vienen fijados por docs/veroboard.md seccion 2, que es la
-// especificacion de la placa definitiva.
+// Los pines no se eligen aqui: vienen fijados por el trazado de la veroboard
+// definitiva.
 //
 // Correspondencia pin fisico del Daisy -> argumento de hw.GetPin() (numeracion
 // "D" de libDaisy). NO coinciden, y confundirlos es cablear otro pin:
@@ -34,8 +34,8 @@
 // y 30 son solo tolerantes a 3,3 V: los potes cuelgan de 3V3A, asi que no hay
 // conflicto.
 //
-// Enlace SPI (docs/spi.md seccion 2): S3 maestro, Daisy esclavo SPI_1 con
-// DMA, 10 MHz, modo 0, MSB first. Trama de 2054 bytes:
+// Enlace SPI: S3 maestro, Daisy esclavo SPI_1 con DMA, 10 MHz, modo 0, MSB
+// first. Trama de 2054 bytes:
 //   byte 0..1     : header 0xDE 0xAD
 //   byte 2..3     : seq_id  uint16 little-endian
 //   byte 4..2051  : payload 1024 muestras int16 little-endian (Q15)
@@ -512,7 +512,7 @@ static void spi_process_frame()
 // 3V3A (pin fisico 21) y NUNCA desde el rail de 5 V: el ADC referencia su fondo
 // de escala a esa misma tension analogica, asi que cualquier deriva afecta por
 // igual a referencia y senal y se cancela. Colgarlos del 3V3 digital meteria
-// ademas el ruido de conmutacion en la lectura. (veroboard.md seccion 2.)
+// ademas el ruido de conmutacion en la lectura.
 
 enum PotIdx
 {
@@ -588,7 +588,7 @@ static inline float map_lin(float x, float lo, float hi)
 }
 
 // Decodifica el selector ON-OFF-ON leido en el pin fisico 29. Las tres tensiones
-// las fija el divisor de dos resistencias de 10k descrito en veroboard.md:
+// las fija el divisor de dos resistencias de 10k de la veroboard:
 //   arriba (a 3V3A) = 3,3 V -> HPF   centro (abierto) = 1,65 V -> BPF
 //   abajo  (a AGND) = 0 V   -> LPF
 // (Mismo orden que la serigrafia del panel: HPF arriba, LPF abajo.)

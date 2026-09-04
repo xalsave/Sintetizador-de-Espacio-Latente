@@ -2,7 +2,7 @@
 //
 // Mapea una coordenada tactil normalizada (x,y en 0..65535) a una wavetable de
 // TABLE_LEN muestras Q15, interpolando entre las 4 celdas vecinas del grid.
-// Mismo criterio de mapeo que spi.md y que 5_demo_morph.py (validacion en PC).
+// Mismo criterio de mapeo que 5_demo_morph.py (validacion en PC).
 #pragma once
 
 #include <stdint.h>

@@ -1,4 +1,4 @@
-// spi_sender.cpp - Implementacion del emisor SPI maestro del S3 (ver spi.md 2).
+// spi_sender.cpp - Implementacion del emisor SPI maestro del S3.
 #include "spi_sender.h"
 #include <Arduino.h>
 #include <SPI.h>
@@ -10,7 +10,7 @@
 static const int      SAMPLES     = 1024;             // muestras por wavetable
 static const int      PAYLOAD_LEN = SAMPLES * 2;      // 2048 bytes
 static const int      FRAME_LEN   = PAYLOAD_LEN + 6;  // 2054 bytes (header+seq+crc)
-static const uint32_t SPI_HZ      = 10000000;         // 10 MHz (spi.md)
+static const uint32_t SPI_HZ      = 10000000;         // 10 MHz
 
 static SPIClass spi(FSPI);        // SPI2 (FSPI) del ESP32-S3
 static int      cs_pin = -1;
@@ -37,8 +37,8 @@ void spi_tx_begin(int sck, int miso, int mosi, int cs)
     cs_pin = cs;
     pinMode(cs_pin, OUTPUT);
     digitalWrite(cs_pin, HIGH);     // CS en reposo alto (activo a nivel bajo)
-    // ss = -1: gestionamos CS a mano (como el pseudocodigo de spi.md);
-    // writeBytes() no togglea el SS del periferico.
+    // ss = -1: gestionamos CS a mano; writeBytes() no togglea el SS del
+    // periferico.
     spi.begin(sck, miso, mosi, -1);
 }
 

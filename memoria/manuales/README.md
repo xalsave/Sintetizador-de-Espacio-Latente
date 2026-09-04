@@ -38,9 +38,9 @@ especificación MIDI y las dos bibliotecas de la plataforma Daisy).
   componente. **Ojo con lo que dice y lo que no**: no tiene tabla de
   condiciones recomendadas, así que **no existe un «mínimo de 4,5 V» como
   tal**. Lo que hay es que sus parámetros garantizados están especificados
-  con VCC = 4,5 V, y esa es la forma correcta de escribirlo. La nota de
-  `PROJECT.md` y de `alimentacion.md` que habla de «los 4,5 V mínimos» es
-  una regla de proyecto, razonable pero no literal del fabricante.
+  con VCC = 4,5 V, y esa es la forma correcta de escribirlo. La nota interna
+  del proyecto que habla de «los 4,5 V mínimos» es una regla propia,
+  razonable pero no literal del fabricante.
   Sigue sin descargarse la del **PCM3060**: el códec lo configura el
   hardware de la placa y no se toca desde el código.
 - Los dos PDF de Espressif se bajaron de `documentation.espressif.com`, que es

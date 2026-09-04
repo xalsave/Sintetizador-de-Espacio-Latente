@@ -1,6 +1,6 @@
 // spi_sender.h - Envio de la wavetable interpolada al Daisy por SPI (maestro).
 //
-// Trama (2054 bytes, ver docs/spi.md seccion 2):
+// Trama (2054 bytes):
 //   byte 0..1     : header 0xDE 0xAD
 //   byte 2..3     : seq_id  uint16 little-endian (incrementa por wavetable)
 //   byte 4..2051  : payload 1024 muestras int16 little-endian (Q15)

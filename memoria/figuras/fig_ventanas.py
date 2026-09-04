@@ -1,7 +1,7 @@
 """Las dos ventanas del tactil de la CYD sobre el plano de cuentas crudas.
 
 Todos los numeros estan medidos en banco el 27 ago 2026 con la placa ya
-montada en la carcasa (ver PROJECT.md, entrada de esa fecha):
+montada en la carcasa:
 
   panel completo  148..3962 en X, 198..3902 en Y  (calibracion de S6 ya
                   espejada por el giro de 180 grados)
