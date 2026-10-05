@@ -1,8 +1,15 @@
 # Sintetizador de Espacio Latente
 
 > Sintetizador digital embebido que genera timbres mediante interpolación
-> neuronal de wavetables. Trabajo de Final de Grado, Grado en Ingeniería de
-> Sistemas de Telecomunicación (GITST), Universitat Politècnica de València.
+> neuronal de wavetables. Trabajo Fin de Grado, Grado en Ingeniería de
+> Tecnologías y Servicios de Telecomunicación (GTIST), Universitat Politècnica
+> de València.
+
+<p align="center">
+  <img src="docs/img/instrumento.jpg" alt="El instrumento terminado: pantalla táctil, OLED y panel de mandos sobre una carcasa impresa en 3D" width="460">
+</p>
+
+📄 **Memoria completa del TFG:** [Desarrollo de un sintetizador de sonido embebido basado en síntesis wavetable e inteligencia artificial (PDF)](memoria_tfg.pdf)
 
 ---
 
@@ -17,32 +24,23 @@ formas de onda aprendidas y la reproduce con control MIDI desde un teclado.
 
 A diferencia de los sintetizadores wavetable tradicionales, donde el intérprete
 selecciona una de N tablas predefinidas, este sistema permite explorar de
-forma continua un mapa de timbres donde **cada punto produce una onda nueva**,
-sintetizada por el decoder del modelo aprendido.
+forma continua un mapa de timbres donde **cada punto produce una onda
+distinta**. Las tablas salen del decoder del modelo aprendido, que se ejecuta
+una sola vez en el ordenador; en el instrumento solo hay consulta de tabla e
+interpolación.
 
 ---
 
 ## Demostración del concepto
 
-```
-   Usuario toca (x, y)              Espacio latente 2D
-   en pantalla táctil      ───►     aprendido por VAE
-                                            │
-                                            ▼
-                                    Wavetable de 1024
-                                    muestras (1 ciclo)
-                                            │
-                                            ▼
-                                    Síntesis wavetable
-                                    + filtro + ADSR + MIDI
-                                            │
-                                            ▼
-                                       Audio out
-```
+<p align="center">
+  <img src="docs/img/instrumento_uso.jpg" alt="Un dedo recorre la pantalla táctil mientras se dibuja la onda resultante" width="380">
+</p>
 
 El intérprete recorre el plano con el dedo y oye el timbre transformarse de
 forma continua entre todas las familias del dataset (cuerdas, vientos,
-sintéticos, ruidos, etc.) sin saltos perceptibles.
+sintéticos, ruidos, etc.) sin saltos perceptibles. La pantalla dibuja la onda
+que está sonando y el OLED muestra el último mando movido.
 
 ---
 
@@ -50,6 +48,10 @@ sintéticos, ruidos, etc.) sin saltos perceptibles.
 
 Tres microcontroladores con roles especializados, comunicados por buses
 serie estándar:
+
+<p align="center">
+  <img src="docs/img/arquitectura.png" alt="Diagrama de bloques: CYD, ESP32-S3 y Daisy Seed, con MIDI, panel y salida de audio" width="760">
+</p>
 
 | Subsistema       | Hardware                    | Función                                       |
 |------------------|-----------------------------|-----------------------------------------------|
@@ -59,15 +61,6 @@ serie estándar:
 | Control MIDI     | Arturia Keystep MK2         | Teclado controlador por DIN                   |
 | Panel analógico  | 6 potenciómetros + selector | ADSR, corte, resonancia y tipo de filtro      |
 | Display          | OLED SSD1306 128×64         | Parámetro en edición y curva correspondiente  |
-
-**Flujo de datos:**
-
-```
-[CYD]──UART(460800)──►[ESP32-S3]──SPI(10 MHz)──►[Daisy Seed]──audio──► jack 3.5
-   ▲                                                  ▲
-   └────── onda diezmada, para dibujarla ─────┘       │ MIDI DIN (6N138 → USART1)
-                                                 [Keystep MK2]
-```
 
 El enlace con la CYD es full-duplex: la coordenada táctil sube al ESP32-S3 en
 una trama de 6 bytes, y el ESP32-S3 devuelve la onda resultante diezmada a 256
@@ -79,9 +72,17 @@ el SPI hacia el Daisy, en tramas de 2054 bytes protegidas con CRC16-CCITT.
 
 ## Cómo funciona
 
+El sistema trabaja en dos fases: la red neuronal solo interviene en la de
+preparación, en el ordenador, y el instrumento se limita a leer lo que ella
+dejó horneado.
+
+<p align="center">
+  <img src="docs/img/pipeline.png" alt="Las dos fases: preparación en el ordenador y ejecución en el instrumento" width="760">
+</p>
+
 ### Fase offline (preparación, en PC)
 
-1. **Preprocesado del dataset.** Se cargan las ~4000 wavetables del corpus AKWF
+1. **Preprocesado del dataset.** Se cargan las 4358 wavetables del corpus AKWF
    (Adventure Kid Waveforms), se remuestrean de 600 a 1024 muestras por FFT, se
    elimina la componente continua, se alinea el armónico fundamental a fase 0 y
    se normaliza por pico.
@@ -89,10 +90,29 @@ el SPI hacia el Daisy, en tramas de 2054 bytes protegidas con CRC16-CCITT.
    PyTorch, con encoder 1024 → 512 → 128 → latente 2D y decoder espejo. La
    pérdida combina error cuadrático de reconstrucción y divergencia KL con un
    peso pequeño y rampa de calentamiento.
+
+<p align="center">
+  <img src="docs/img/latente.png" alt="Espacio latente 2D: cada punto es una onda del dataset, coloreada por familia" width="720">
+  <br>
+  <em>Espacio latente aprendido. Cada punto es una onda del corpus; el rectángulo a trazos delimita los percentiles 2 y 98 de cada eje, la zona que se muestrea para la rejilla.</em>
+</p>
+
+<p align="center">
+  <img src="docs/img/reconstrucciones.png" alt="Cuatro ondas originales frente a su reconstrucción por el VAE" width="720">
+  <br>
+  <em>Ondas originales frente a su reconstrucción. El cuello de botella de dos dimensiones conserva la forma general y redondea los flancos verticales.</em>
+</p>
+
 3. **Horneado del grid.** Se acota la zona poblada del latente por percentiles,
    se muestrea una rejilla regular de 16×16 = 256 puntos, se decodifica una
    wavetable en cada nodo y se exporta el banco como header de C en formato Q15,
    unos 512 KB en la flash del ESP32-S3.
+
+<p align="center">
+  <img src="docs/img/rejilla.png" alt="Muestra de las ondas de la rejilla 16×16, una de cada tres filas y columnas" width="520">
+  <br>
+  <em>Contenido de la rejilla, uno de cada tres nodos en cada eje: la variedad de formas repartida por el plano.</em>
+</p>
 
 La red **no se ejecuta en el instrumento**. Toda la inferencia ocurre en esta
 fase, de modo que en vivo no hay latencia de modelo.
@@ -112,6 +132,12 @@ fase, de modo que en vivo no hay latencia de modelo.
    por un filtro variable de estado y una envolvente ADSR, y sale por el códec
    del Daisy a un jack de 3.5 mm.
 
+<p align="center">
+  <img src="docs/img/crossfade.png" alt="Pesos del crossfade, punto medio de la mezcla y nivel durante la transición" width="760">
+  <br>
+  <em>Transición entre dos tablas contiguas: pesos del fundido lineal, onda a mitad de mezcla y nivel de pico durante los 20 ms.</em>
+</p>
+
 ### Panel de control
 
 El Daisy lee siete canales analógicos: los cuatro tiempos y niveles del ADSR,
@@ -119,6 +145,19 @@ la frecuencia de corte, la resonancia y un selector de tres posiciones que
 escoge entre filtro paso bajo, paso banda y paso alto. El OLED muestra el
 último mando movido con su valor en unidades reales y la curva correspondiente,
 la envolvente o la respuesta del filtro.
+
+---
+
+## Hardware
+
+Las placas y el resto de componentes se montan sobre veroboard, con los
+módulos en zócalos, y todo se alimenta desde una única fuente de 5 V. La
+carcasa y el panel frontal están modelados de forma paramétrica en OpenSCAD e
+impresos en 3D.
+
+<p align="center">
+  <img src="docs/img/carcasa.png" alt="Render de la carcasa: conjunto montado y despiece" width="760">
+</p>
 
 ---
 
@@ -137,9 +176,9 @@ Sintetizador-de-Espacio-Latente/
 ├── hardware/
 │   ├── cad/                  # Carcasa y panel en OpenSCAD
 │   └── schematics/           # Cableado y veroboard en Fritzing
-├── memoria/
-│   ├── plantilla latex/      # Fuentes LaTeX del documento y capítulos
-│   └── figuras/              # Guiones de Python que generan las figuras
+├── docs/
+│   └── img/                  # Fotos y figuras de este README
+├── memoria_tfg.pdf           # Memoria del TFG
 ├── LICENSE
 └── README.md
 ```
@@ -204,7 +243,8 @@ en lugar de fiarlo al oído:
 
 **Completado.** El instrumento está montado, flasheado y verificado como
 unidad, con los tres microcontroladores, el panel analógico, el display y la
-carcasa definitiva. El documento del TFG se encuentra en `memoria/`.
+carcasa definitiva. La memoria del TFG está en la raíz del repositorio, en
+[PDF](memoria_tfg.pdf).
 
 El decoder neuronal embarcado en el ESP32-S3 mediante TensorFlow Lite Micro se
 estudió como ampliación y queda documentado como línea de trabajo futuro: la
@@ -237,10 +277,10 @@ autónomo.
 ## Autor
 
 **Alejandro Saez Vega**
-Grado en Ingeniería de Sistemas de Telecomunicación
+Grado en Ingeniería de Tecnologías y Servicios de Telecomunicación
 Universitat Politècnica de València
 
-Tutor del TFG: Jose Javier López Monfort
+Tutor del TFG: José Javier López Monfort
 
 ---
 
